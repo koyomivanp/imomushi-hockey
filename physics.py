@@ -30,6 +30,7 @@ from constants import (
     PADDLE_DASH_PUCK_MIN_EXIT,
     PADDLE_DASH_PUCK_SEPARATION,
     PADDLE_DASH_PUCK_SPEED_RATIO,
+    PADDLE_DASH_SWEEP_FORGIVENESS,
     PADDLE_HEAD_ON_DOT,
     PADDLE_HEAD_ON_IGNORE_TIME,
     PADDLE_HEAD_ON_MIN_EXIT,
@@ -368,13 +369,70 @@ def _apply_boosted_puck_hit(
 
 
 def _apply_dash_puck_hit(puck: Puck, paddle: Paddle, pnx: float, pny: float) -> None:
-    """ダッシュ中: 移動方向へ強く吹き飛ばし、頭ドリブルを防ぐ"""
-    _apply_boosted_puck_hit(
-        puck, paddle, pnx, pny,
-        min_exit_base=PADDLE_DASH_PUCK_MIN_EXIT,
-        speed_ratio=PADDLE_DASH_PUCK_SPEED_RATIO,
-        impulse=PADDLE_DASH_PUCK_IMPULSE,
-    )
+    """ダッシュ中: 移動方向へ強く吹き飛ばし（すり抜け後も進行方向でヒット）"""
+    mvx, mvy, speed = _paddle_move_unit(paddle)
+    if speed < 24.0:
+        ldx, ldy = paddle.last_dir
+        llen = math.hypot(ldx, ldy)
+        if llen > 1e-6:
+            mvx, mvy = ldx / llen, ldy / llen
+    sx, sy = _maybe_jitter_dir(mvx, mvy, head_on=True)
+    paddle_speed = math.hypot(paddle.vx, paddle.vy)
+    min_exit = max(PADDLE_DASH_PUCK_MIN_EXIT, paddle_speed * PADDLE_DASH_PUCK_SPEED_RATIO)
+    puck.vx = sx * min_exit + paddle.vx * PADDLE_DASH_PUCK_IMPULSE
+    puck.vy = sy * min_exit + paddle.vy * PADDLE_DASH_PUCK_IMPULSE
+
+
+def _swept_dash_puck_contact(
+    paddle: Paddle,
+    puck: Puck,
+    pr: float,
+    touch_dist: float,
+) -> Optional[tuple[float, float, float, float, float]]:
+    """ダッシュ移動経路上の葉っぱ接触。返値: (paddle_x, paddle_y, pnx, pny, dist)"""
+    ax, ay = paddle.prev_x, paddle.prev_y
+    bx, by = paddle.x, paddle.y
+    dx, dy = bx - ax, by - ay
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq < 1e-6:
+        return None
+
+    sweep_radius = touch_dist + PADDLE_DASH_SWEEP_FORGIVENESS
+    t = ((puck.x - ax) * dx + (puck.y - ay) * dy) / seg_len_sq
+    t = max(0.0, min(1.0, t))
+    cx = ax + dx * t
+    cy = ay + dy * t
+    dist_x = puck.x - cx
+    dist_y = puck.y - cy
+    dist = math.hypot(dist_x, dist_y)
+    if dist >= sweep_radius:
+        return None
+
+    if dist > 1e-6:
+        pnx, pny = dist_x / dist, dist_y / dist
+    else:
+        pnx, pny = _normalize(dx, dy)
+        if pnx == 0.0 and pny == 0.0:
+            pnx, pny = 1.0, 0.0
+    return cx, cy, pnx, pny, dist
+
+
+def _place_puck_after_dash_hit(
+    puck: Puck,
+    paddle: Paddle,
+    pr: float,
+    paddle_x: float,
+    paddle_y: float,
+) -> None:
+    mvx, mvy, speed = _paddle_move_unit(paddle)
+    if speed < 24.0:
+        ldx, ldy = paddle.last_dir
+        llen = math.hypot(ldx, ldy)
+        if llen > 1e-6:
+            mvx, mvy = ldx / llen, ldy / llen
+    sep = pr + puck.radius + PADDLE_DASH_PUCK_SEPARATION
+    puck.x = paddle_x + mvx * sep
+    puck.y = paddle_y + mvy * sep
 
 
 def _apply_close_puck_hit(puck: Puck, paddle: Paddle, pnx: float, pny: float) -> None:
@@ -398,15 +456,23 @@ def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
     dist = math.hypot(dx, dy)
     touch_dist = pr + puck.radius + PADDLE_HIT_FORGIVENESS
 
-    if dist >= touch_dist:
+    swept_contact = None
+    if paddle.is_dashing:
+        swept_contact = _swept_dash_puck_contact(paddle, puck, pr, touch_dist)
+
+    if dist >= touch_dist and swept_contact is None:
         if paddle.player in puck.paddle_ignore_players and not puck_paddle_in_ignore(puck, paddle, now):
             puck.paddle_ignore_players.discard(paddle.player)
         return False
 
-    if dist < 1e-6:
-        dx, dy = 1.0, 0.0
-        dist = 1.0
-    pnx, pny = dx / dist, dy / dist
+    if swept_contact is not None:
+        paddle_hit_x, paddle_hit_y, pnx, pny, dist = swept_contact
+    else:
+        if dist < 1e-6:
+            dx, dy = 1.0, 0.0
+            dist = 1.0
+        pnx, pny = dx / dist, dy / dist
+        paddle_hit_x, paddle_hit_y = paddle.x, paddle.y
     is_close = _is_close_puck_contact(dist, pr, puck.radius)
     head_on = _is_head_on_hit(paddle, pnx, pny)
 
@@ -419,7 +485,7 @@ def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
     min_sep = pr + puck.radius + separation
     wall_pinch, pinch_inward = _is_wall_pinch(puck, paddle)
     overlapping = dist < min_sep
-    if overlapping:
+    if overlapping and swept_contact is None:
         dist, pnx, pny, min_sep = _resolve_puck_paddle_overlap(
             puck, paddle, pr, separation, pnx, pny, dist,
             wall_pinch=wall_pinch and is_close,
@@ -439,7 +505,7 @@ def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
     penetrating = overlapping
 
     if paddle.is_dashing:
-        want_hit = penetrating or rel_out < paddle_push + 120.0
+        want_hit = swept_contact is not None or penetrating or rel_out < paddle_push + 120.0
     elif is_close:
         want_hit = penetrating or rel_out < paddle_push + 70.0
     else:
@@ -473,6 +539,7 @@ def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
             _reset_wall_grind(puck)
             ignore_time = WALL_GRIND_SLIP_IGNORE
     elif paddle.is_dashing:
+        _place_puck_after_dash_hit(puck, paddle, pr, paddle_hit_x, paddle_hit_y)
         _apply_dash_puck_hit(puck, paddle, pnx, pny)
         puck.dash_breach_until = now + FENCE_DASH_BREACH_WINDOW
         ignore_time = PADDLE_DASH_PUCK_IGNORE_TIME

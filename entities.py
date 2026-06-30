@@ -119,6 +119,8 @@ class Paddle:
     is_dashing: bool = False
     face_heading: float = 0.0
     face_heading_ready: bool = False
+    prev_x: float = 0.0
+    prev_y: float = 0.0
 
     def base_radius(self) -> float:
         axis = TABLE_H if PADDLE_SIZE_AXIS == "height" else TABLE_W

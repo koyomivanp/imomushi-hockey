@@ -50,8 +50,8 @@ class Match:
     def reset_match(self) -> None:
         rect = table_rect()
         self.paddles = [
-            Paddle(player=0, x=rect.left + rect.width * 0.2, y=rect.centery, last_dir=(1.0, 0.0), face_heading=0.0, face_heading_ready=True),
-            Paddle(player=1, x=rect.right - rect.width * 0.2, y=rect.centery, last_dir=(-1.0, 0.0), face_heading=math.pi, face_heading_ready=True),
+            Paddle(player=0, x=rect.left + rect.width * 0.2, y=rect.centery, last_dir=(1.0, 0.0), face_heading=0.0, face_heading_ready=True, prev_x=rect.left + rect.width * 0.2, prev_y=rect.centery),
+            Paddle(player=1, x=rect.right - rect.width * 0.2, y=rect.centery, last_dir=(-1.0, 0.0), face_heading=math.pi, face_heading_ready=True, prev_x=rect.right - rect.width * 0.2, prev_y=rect.centery),
         ]
         for paddle in self.paddles:
             paddle.trail_x = paddle.x
@@ -119,6 +119,8 @@ class Match:
             speed = paddle.speed(now, paddle.is_dashing)
             if dx or dy:
                 paddle.last_dir = (dx, dy)
+            paddle.prev_x = paddle.x
+            paddle.prev_y = paddle.y
             paddle.vx = dx * speed
             paddle.vy = dy * speed
             paddle.x += paddle.vx * dt
