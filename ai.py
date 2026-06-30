@@ -46,8 +46,8 @@ DIFFICULTIES: dict[str, CPUDifficulty] = {
         aim_error=18.0,
         threat_score_defend=650.0,
         intercept_lead=0.65,
-        dash_chance=0.42,
-        dash_cooldown=0.95,
+        dash_chance=0.34,
+        dash_cooldown=1.05,
     ),
     "hard": CPUDifficulty(
         key="hard",
@@ -57,8 +57,8 @@ DIFFICULTIES: dict[str, CPUDifficulty] = {
         aim_error=7.0,
         threat_score_defend=480.0,
         intercept_lead=0.82,
-        dash_chance=0.62,
-        dash_cooldown=0.78,
+        dash_chance=0.48,
+        dash_cooldown=0.88,
     ),
 }
 
@@ -128,10 +128,39 @@ class CPUAI:
         diff = self.difficulty
         chance = diff.dash_chance
         if dist > 115.0:
-            chance += 0.12
-        if self._trail_blocks_path(paddle.x, paddle.y, self._target[0], self._target[1], paddle.player, fences):
-            chance += 0.28
-        return random.random() < min(0.92, chance)
+            chance += 0.08
+
+        own_block = self._trail_blocks_path(
+            paddle.x, paddle.y, self._target[0], self._target[1], paddle.player, fences,
+        )
+        opp_walls = self._opponent_walls_between(
+            paddle.x, paddle.y, self._target[0], self._target[1], paddle.player, fences,
+        )
+
+        if own_block:
+            chance += 0.10
+        if opp_walls >= 2:
+            # 壁貫通コンボは人間でも難しい — CPUも完璧に決めない
+            chance *= max(0.35, 1.0 - 0.14 * (opp_walls - 1))
+            if random.random() < 0.18 + 0.10 * opp_walls:
+                return False
+
+        return random.random() < min(0.82, chance)
+
+    def _opponent_walls_between(
+        self,
+        x1: float, y1: float,
+        x2: float, y2: float,
+        player: int,
+        fences: list[Fence],
+    ) -> int:
+        count = 0
+        for fence in fences:
+            if fence.owner == player:
+                continue
+            if self._segments_cross(x1, y1, x2, y2, fence.x1, fence.y1, fence.x2, fence.y2):
+                count += 1
+        return count
 
     @staticmethod
     def _segments_cross(
