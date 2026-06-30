@@ -14,7 +14,7 @@
 ## 起動方法
 
 ```bash
-cd air-hockey-broken
+cd imomushi-hockey
 pip install -r requirements.txt
 python main.py
 ```
