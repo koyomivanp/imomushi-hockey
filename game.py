@@ -388,9 +388,6 @@ class Match:
                 puck.grind_paddle = -1
                 puck.grind_escape_x = 0.0
                 puck.dash_breach_until = 0.0
-                puck.fence_chain_owner = -1
-                puck.fence_chain_count = 0
-                puck.fence_chain_until = 0.0
                 puck.prev_x = puck.x
                 puck.prev_y = puck.y
 

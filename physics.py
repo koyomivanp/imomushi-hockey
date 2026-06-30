@@ -10,9 +10,6 @@ from constants import (
     FENCE_BREACH_BOOST,
     FENCE_BREACH_DIR_MIN,
     FENCE_BREACH_MOMENTUM_RETAIN,
-    FENCE_BREACH_SPEED,
-    FENCE_CHAIN_HITS_BEFORE_BREACH,
-    FENCE_CHAIN_WINDOW,
     FENCE_DASH_BREACH_WINDOW,
     FENCE_HALF_WIDTH,
     HIT_JITTER_ANGLE,
@@ -747,31 +744,10 @@ def _is_attacking_fence(puck: Puck, fence: Fence) -> bool:
 
 
 def _should_breach_fence(puck: Puck, fence: Fence, now: float) -> bool:
+    """ダッシュで葉っぱを押し出した直後のみ体節を貫通"""
     if not _is_attacking_fence(puck, fence):
         return False
-    if now < puck.dash_breach_until:
-        return True
-    if math.hypot(puck.vx, puck.vy) >= FENCE_BREACH_SPEED:
-        return True
-    return (
-        fence.owner == puck.fence_chain_owner
-        and now < puck.fence_chain_until
-        and puck.fence_chain_count >= FENCE_CHAIN_HITS_BEFORE_BREACH
-    )
-
-
-def _update_fence_chain(puck: Puck, fence: Fence, now: float, *, breached: bool) -> None:
-    if breached:
-        puck.fence_chain_owner = -1
-        puck.fence_chain_count = 0
-        puck.fence_chain_until = 0.0
-        return
-    if fence.owner == puck.fence_chain_owner and now < puck.fence_chain_until:
-        puck.fence_chain_count += 1
-    else:
-        puck.fence_chain_owner = fence.owner
-        puck.fence_chain_count = 1
-    puck.fence_chain_until = now + FENCE_CHAIN_WINDOW
+    return now < puck.dash_breach_until
 
 
 def _apply_rally_escalation(puck: Puck) -> None:
@@ -795,7 +771,6 @@ def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> bool:
         puck, fence.x1, fence.y1, fence.x2, fence.y2, now, hw, boost, breach=breach,
     )
     if hit:
-        _update_fence_chain(puck, fence, now, breached=breach)
         if breach:
             puck.wall_bounces += 1
         else:
