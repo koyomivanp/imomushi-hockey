@@ -5,8 +5,6 @@ import random
 from typing import Optional
 
 from constants import (
-    BAR_BOOST,
-    BAR_HALF_WIDTH,
     ELASTICITY,
     FENCE_BOOST,
     FENCE_HALF_WIDTH,
@@ -31,10 +29,7 @@ from constants import (
     PADDLE_HEAD_ON_MIN_EXIT_RATIO,
     PADDLE_HEAD_ON_REL_SEP,
     PADDLE_HEAD_ON_SEP_MARGIN,
-    PADDLE_HIT_COOLDOWN,
     PADDLE_HIT_FORGIVENESS,
-    PADDLE_KB_DRAG,
-    PADDLE_KB_IMPULSE,
     PADDLE_PUCK_IMPULSE,
     PADDLE_PUCK_IGNORE_TIME,
     PADDLE_PUCK_SEPARATION,
@@ -50,11 +45,7 @@ from constants import (
     RALLY_BOUNCE_MAX_MULT,
     PUCK_MAX_SPEED,
 )
-from constants import (
-    GUARD_DEFENSE_X_RATIO,
-    GUARD_ENTER_SPEED,
-)
-from entities import Assist, Bar, Fence, GuardSoldier, Paddle, Puck, clamp_speed, goal_bounds, table_rect
+from entities import Fence, Paddle, Puck, clamp_speed, goal_bounds, table_rect
 
 
 def _normalize(dx: float, dy: float) -> tuple[float, float]:
@@ -542,63 +533,6 @@ def clamp_paddle_to_table(paddle: Paddle, now: float) -> None:
     paddle.y = max(rect.top + r, min(rect.bottom - r, paddle.y))
 
 
-def apply_knockback_to_puck(puck: Puck, from_x: float, from_y: float, strength: float) -> None:
-    dx, dy = _normalize(puck.x - from_x, puck.y - from_y)
-    if dx == 0 and dy == 0:
-        dx = 1.0
-    puck.vx = dx * strength
-    puck.vy = dy * strength
-    puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
-
-
-def apply_knockback_to_paddle(
-    paddle: Paddle,
-    from_x: float,
-    from_y: float,
-    strength: float,
-    now: float,
-) -> None:
-    dx, dy = _normalize(paddle.x - from_x, paddle.y - from_y)
-    if dx == 0 and dy == 0:
-        dx = 1 if paddle.player == 0 else -1
-
-    peak_v = strength * PADDLE_KB_IMPULSE
-    paddle.kb_vx = dx * peak_v
-    paddle.kb_vy = dy * peak_v
-    paddle.hit_cooldown_until = max(paddle.hit_cooldown_until, now + PADDLE_HIT_COOLDOWN)
-
-
-def resolve_assist_puck(guard: GuardSoldier, puck: Puck, owner: int) -> None:
-    """旧API互換"""
-    pass
-
-
-def update_guard_soldier(guard: GuardSoldier, dt: float, now: float, pucks: list[Puck]) -> None:
-    rect = table_rect()
-    direction = 1 if guard.owner == 0 else -1
-    defend_x = (
-        rect.left + rect.width * GUARD_DEFENSE_X_RATIO
-        if guard.owner == 0
-        else rect.right - rect.width * GUARD_DEFENSE_X_RATIO
-    )
-
-    if guard.state == "entering":
-        guard.x += direction * GUARD_ENTER_SPEED * dt
-        if (guard.owner == 0 and guard.x >= defend_x) or (guard.owner == 1 and guard.x <= defend_x):
-            guard.x = defend_x
-            guard.state = "guarding"
-            if guard.ray_next_fire <= 0:
-                guard.ray_next_fire = now
-
-
-update_stag_beetle = update_guard_soldier
-
-
-def update_assist(assist: GuardSoldier, dt: float) -> None:
-    """旧API互換"""
-    pass
-
-
 def _closest_on_segment(
     px: float, py: float,
     x1: float, y1: float, x2: float, y2: float,
@@ -684,32 +618,3 @@ def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> bool:
     if hit:
         _apply_rally_escalation(puck)
     return hit
-
-
-def bar_half_width(paddle: Paddle, now: float) -> float:
-    return BAR_HALF_WIDTH
-
-
-def resolve_puck_bar(puck: Puck, bar: Bar, paddle: Paddle, now: float) -> bool:
-    if bar.grow_ratio(now) < 0.05:
-        return False
-    hw = bar_half_width(paddle, now)
-    hit = False
-    for _, x1, y1, x2, y2 in bar.active_segments(paddle, now):
-        if resolve_puck_line(puck, x1, y1, x2, y2, now, hw, BAR_BOOST):
-            hit = True
-    return hit
-
-
-def resolve_ray_bar(shot, bar: Bar, paddle: Paddle, now: float) -> bool:
-    """光線弾が相手バーに当たったら区画ダメージ。命中したら True"""
-    if bar.grow_ratio(now) < 0.05:
-        return False
-    hw = bar_half_width(paddle, now)
-    for idx, x1, y1, x2, y2 in bar.active_segments(paddle, now):
-        cx, cy = _closest_on_segment(shot.x, shot.y, x1, y1, x2, y2)
-        dist = math.hypot(shot.x - cx, shot.y - cy)
-        if dist <= shot.radius + hw:
-            bar.register_ray_hit(idx)
-            return True
-    return False

@@ -43,7 +43,7 @@ from entities import table_rect, goal_bounds
 from game import GameState, Match
 from caterpillar_art import draw_player_fences
 from effects import draw_goal_celebration
-from sprites import init_sprites, reload_sprites
+from sprites import init_sprites
 from visuals import make_window_icon
 
 
@@ -280,7 +280,7 @@ def main() -> None:
     pygame.display.set_icon(make_window_icon())
     pygame.display.set_caption(f"{GAME_TITLE} v{VERSION}")
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-    reload_sprites()
+    init_sprites()
     clock = pygame.time.Clock()
 
     title_font = pygame.font.SysFont("meiryo", 42, bold=True)
@@ -394,26 +394,13 @@ def main() -> None:
         screen.fill(BG_COLOR)
         draw_table(screen)
 
-        for item in match.items:
-            item.draw(screen)
-        for assist in match.assists:
-            assist.draw(screen, now)
-        for wind in match.winds:
-            wind.draw(screen, now)
         for owner in (0, 1):
             player_fences = [f for f in match.fences if f.owner == owner]
             draw_player_fences(screen, player_fences, now, CATERPILLAR_BODY_RADIUS)
-        for pending in match.pending_fences:
-            pending.draw(screen, match.paddles[pending.owner], now)
-        for bar in match.bars:
-            bar.draw(screen, match.paddles[bar.owner], now)
         for puck in match.pucks:
             puck.draw(screen, now)
         for paddle in match.paddles:
             paddle.draw(screen, now)
-        for ray in match.rays:
-            ray.draw(screen)
-
         if match.state != GameState.TITLE:
             draw_hud(screen, match, hud_font, small_font, now, bgm_muted=bgm_muted)
             draw_announce(screen, match, announce_font)

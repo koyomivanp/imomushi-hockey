@@ -10,15 +10,6 @@ from constants import (
     FENCE_HALF_WIDTH,
     FENCE_MIN_LENGTH,
     GOAL_RESET_DELAY,
-    ITEM_FIRST_SPAWN,
-    ITEMS_ENABLED,
-    ITEM_SPAWN_INTERVAL,
-    MAX_ITEMS_ON_FIELD,
-    MAX_PUCKS,
-    PUCK_AUTO_SPAWN_ENABLED,
-    PUCK_AUTO_SPAWN_INTERVAL,
-    PUCK_AUTO_SPAWN_INTERVAL_MIN,
-    PUCK_ESCALATION_TIME,
     TRAIL_CENTER_BONUS,
     TRAIL_CENTER_ZONE_RATIO,
     TRAIL_GOAL_LIFETIME,
@@ -30,43 +21,16 @@ from constants import (
     TRAIL_WALL_LIFETIME,
     TRAIL_WALL_MAX_PER_PLAYER,
     WIN_SCORE,
-    WIND_ACCEL,
 )
-from entities import (
-    Bar,
-    FallingItem,
-    Fence,
-    GuardSoldier,
-    Paddle,
-    PendingFence,
-    Puck,
-    RayShot,
-    WindEffect,
-    spawn_center_puck,
-    spawn_extra_puck,
-    table_rect,
-    clamp_speed,
-)
+from entities import Fence, Paddle, Puck, spawn_center_puck, table_rect
 from effects import GoalCelebration, spawn_goal_celebration, update_goal_celebration
-from items import (
-    activate_pending_fence,
-    apply_item,
-    fire_guard_ray,
-    guard_fire_interval,
-    spawn_falling_item,
-    try_collect_item,
-    update_ray_shot,
-    wind_accel_for,
-)
 from physics import (
     clamp_paddle_to_table,
     resolve_paddle_paddle,
-    resolve_puck_bar,
     resolve_puck_fence,
     resolve_puck_paddle,
     resolve_puck_puck,
     resolve_puck_wall,
-    update_guard_soldier,
 )
 
 
@@ -93,19 +57,12 @@ class Match:
             paddle.trail_x = paddle.x
             paddle.trail_y = paddle.y
         self.pucks: list[Puck] = []
-        self.items: list[FallingItem] = []
-        self.assists: list[GuardSoldier] = []
-        self.pending_fences: list[PendingFence] = []
         self.fences: list[Fence] = []
-        self.winds: list[WindEffect] = []
-        self.bars: list[Bar] = []
-        self.rays: list[RayShot] = []
         self.scores = [0, 0]
         self.state = GameState.TITLE
         self.countdown = COUNTDOWN_START
         self.countdown_timer = 0.0
         self.match_time = 0.0
-        self.next_puck_spawn = PUCK_AUTO_SPAWN_INTERVAL
         self.winner: int | None = None
         self.announce = ""
         self.announce_timer = 0.0
@@ -145,7 +102,7 @@ class Match:
             dx = dy = 0.0
             if self.vs_cpu and i == 1 and cpu_ai is not None:
                 dx, dy, dash = cpu_ai.decide(
-                    paddle, self.paddles[0], self.pucks, self.items, self.fences, now, self.pucks_frozen,
+                    paddle, self.paddles[0], self.pucks, self.fences, now, self.pucks_frozen,
                 )
                 paddle.is_dashing = dash and bool(dx or dy)
             else:
@@ -166,9 +123,6 @@ class Match:
             paddle.vy = dy * speed
             paddle.x += paddle.vx * dt
             paddle.y += paddle.vy * dt
-            paddle.x += paddle.kb_vx * dt
-            paddle.y += paddle.kb_vy * dt
-            paddle.update_knockback(dt, now)
             paddle.update_face_heading(dt)
             clamp_paddle_to_table(paddle, now)
 
@@ -330,18 +284,9 @@ class Match:
                 self.pucks = [spawn_center_puck()]
                 self.pucks_frozen = False
 
-        if ITEMS_ENABLED:
-            self._update_items(dt, now)
-        self._update_pending_fences(now)
         self._update_fences(now)
-        self._update_bars(now)
-        self._update_auto_puck_spawn()
-        self._update_assists(dt, now)
-        self._update_rays(dt, now)
 
         if not self.pucks_frozen:
-            self._apply_wind(dt, now)
-
             for puck in self.pucks:
                 if puck.carried_by >= 0:
                     continue
@@ -355,12 +300,6 @@ class Match:
                     if resolve_puck_paddle(puck, paddle, now):
                         if self.audio is not None:
                             self.audio.play_wall_bounce(puck.wall_bounces, now)
-
-            for puck in self.pucks:
-                if puck.carried_by >= 0:
-                    continue
-                for bar in self.bars:
-                    resolve_puck_bar(puck, bar, self.paddles[bar.owner], now)
 
             fences_to_remove: list[Fence] = []
             for puck in self.pucks:
@@ -403,106 +342,10 @@ class Match:
 
         self._check_win()
 
-    def _update_items(self, dt: float, now: float) -> None:
-        if self.match_time >= self.next_item_spawn and len(self.items) < MAX_ITEMS_ON_FIELD:
-            self.items.append(spawn_falling_item())
-            self.next_item_spawn = self.match_time + ITEM_SPAWN_INTERVAL
-
-        rect = table_rect()
-        for item in list(self.items):
-            item.x += item.vx * dt
-            item.y += item.vy * dt
-            r = item.radius
-            if (
-                item.x + r < rect.left
-                or item.x - r > rect.right
-                or item.y + r < rect.top
-                or item.y - r > rect.bottom
-            ):
-                self.items.remove(item)
-                continue
-            owner = try_collect_item(item, self.paddles, now)
-            if owner is not None:
-                label = apply_item(
-                    item.kind, owner, self.paddles, self.pucks,
-                    self.assists, self.pending_fences, self.fences, self.winds, self.bars,
-                    now,
-                )
-                self._show_announce(label, 1.2)
-                self.items.remove(item)
-
-    def _update_pending_fences(self, now: float) -> None:
-        for pending in list(self.pending_fences):
-            if now < pending.activate_at:
-                continue
-            paddle = self.paddles[pending.owner]
-            lv = self.paddles[pending.owner].stack_level("fence")
-            self.fences.append(activate_pending_fence(pending, paddle, now, level=max(1, lv)))
-            self.pending_fences.remove(pending)
-
     def _update_fences(self, now: float) -> None:
         for fence in list(self.fences):
             if now >= fence.until:
                 self.fences.remove(fence)
-
-    def _update_bars(self, now: float) -> None:
-        for bar in list(self.bars):
-            if now >= bar.until:
-                self.bars.remove(bar)
-
-    def _apply_wind(self, dt: float, now: float) -> None:
-        for wind in list(self.winds):
-            if now >= wind.until:
-                self.winds.remove(wind)
-        if not self.winds:
-            return
-        ax = 0.0
-        for wind in self.winds:
-            wa = wind_accel_for(wind)
-            ax += wa if wind.owner == 0 else -wa
-        for puck in self.pucks:
-            puck.vx += ax * dt
-            puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
-
-    def _puck_spawn_interval(self) -> float:
-        t = min(1.0, self.match_time / PUCK_ESCALATION_TIME)
-        return (
-            PUCK_AUTO_SPAWN_INTERVAL
-            + (PUCK_AUTO_SPAWN_INTERVAL_MIN - PUCK_AUTO_SPAWN_INTERVAL) * t
-        )
-
-    def _update_auto_puck_spawn(self) -> None:
-        if not PUCK_AUTO_SPAWN_ENABLED:
-            return
-        if self.state != GameState.PLAYING or self.pucks_frozen:
-            return
-        if self.match_time < self.next_puck_spawn:
-            return
-        if len(self.pucks) < MAX_PUCKS:
-            self.pucks.append(spawn_extra_puck())
-            self._show_announce("PUCK +1", 0.9)
-        self.next_puck_spawn = self.match_time + self._puck_spawn_interval()
-
-    def _update_assists(self, dt: float, now: float) -> None:
-        for guard in list(self.assists):
-            if now >= guard.until:
-                self.assists.remove(guard)
-                continue
-            update_guard_soldier(guard, dt, now, self.pucks)
-            if guard.state == "guarding" and now >= guard.ray_next_fire:
-                shot = fire_guard_ray(guard, self.pucks)
-                if shot is not None:
-                    self.rays.append(shot)
-                guard.ray_next_fire = now + guard_fire_interval(guard.level)
-
-    def _update_rays(self, dt: float, now: float) -> None:
-        for shot in list(self.rays):
-            if update_ray_shot(shot, dt, self.pucks, self.paddles, self.bars, now):
-                self.rays.remove(shot)
-
-    def _goal_points(self, conceded_side: int, puck: Puck) -> tuple[int, int]:
-        """返値: (得点者, 点数)"""
-        return 1 - conceded_side, 1
 
     def _register_goals(self, scored_events: list[tuple[int, Puck]]) -> None:
         """同一フレーム・同一ゴールへの入りは1回だけカウント"""
@@ -511,23 +354,17 @@ class Match:
             batches.setdefault(conceded_side, []).append(puck)
 
         for conceded_side, pucks in batches.items():
-            best_scorer = 1 - conceded_side
-            best_points = 0
-            for puck in pucks:
-                scorer, points = self._goal_points(conceded_side, puck)
-                if points > best_points:
-                    best_points = points
-                    best_scorer = scorer
+            scorer = 1 - conceded_side
+            points = 1
 
-            if best_points > 0:
-                self.scores[best_scorer] += best_points
-                self._show_announce(f"葉っぱゲット！ +{best_points}", 1.5)
-                rect = table_rect()
-                goal_x = rect.left if conceded_side == 0 else rect.right
-                goal_y = pucks[0].y if pucks else rect.centery
-                self.goal_fx = spawn_goal_celebration(goal_x, goal_y, best_scorer, best_points)
-                if self.audio is not None:
-                    self.audio.play_goal()
+            self.scores[scorer] += points
+            self._show_announce(f"葉っぱゲット！ +{points}", 1.5)
+            rect = table_rect()
+            goal_x = rect.left if conceded_side == 0 else rect.right
+            goal_y = pucks[0].y if pucks else rect.centery
+            self.goal_fx = spawn_goal_celebration(goal_x, goal_y, scorer, points)
+            if self.audio is not None:
+                self.audio.play_goal()
 
             for puck in pucks:
                 if puck in self.pucks:

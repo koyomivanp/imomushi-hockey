@@ -6,7 +6,7 @@ import math
 import random
 from dataclasses import dataclass
 
-from entities import FallingItem, Fence, Paddle, Puck, goal_bounds, table_rect
+from entities import Fence, Paddle, Puck, goal_bounds, table_rect
 
 CPU_PLAYER = 1
 
@@ -92,7 +92,6 @@ class CPUAI:
         paddle: Paddle,
         opponent: Paddle,
         pucks: list[Puck],
-        items: list[FallingItem],
         fences: list[Fence],
         now: float,
         pucks_frozen: bool,

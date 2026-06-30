@@ -1,4 +1,4 @@
-"""Summer Engine / Gemini 生成スプライトの読み込み（無ければプロシージャル描画にフォールバック）"""
+"""葉っぱパック用スプライトの読み込み（無ければプロシージャル描画にフォールバック）"""
 
 from __future__ import annotations
 
@@ -8,21 +8,13 @@ from pathlib import Path
 import pygame
 
 _ASSET_DIR = Path(__file__).resolve().parent / "assets" / "sprites"
-
-_SPRITE_NAMES = {
-    "body_p1": "caterpillar_p1_segment.png",
-    "body_p2": "caterpillar_p2_segment.png",
-    "leaf": "leaf_puck.png",
-}
-
-# 体節スプライトは横顔・背景残りがありやすいためオフ（葉っぱのみスプライト可）
-BODY_SPRITE_ENABLED = False
-
-_cache: dict[str, pygame.Surface | None] = {}
-_loaded = False
+_LEAF_FILE = "leaf_puck.png"
 _MAX_SPRITE_PX = 128
 _BG_LUM_THRESHOLD = 42
 _BG_COLOR_DIST = 48
+
+_cache: pygame.Surface | None = None
+_loaded = False
 
 
 def _ensure_display() -> None:
@@ -120,112 +112,18 @@ def _load_sprite_surface(path: Path) -> pygame.Surface:
 
 
 def init_sprites() -> None:
-    global _loaded
+    global _loaded, _cache
     if _loaded:
         return
     _loaded = True
-    _ASSET_DIR.mkdir(parents=True, exist_ok=True)
-    legacy_heads = {
-        "head_p1": "caterpillar_p1_head.png",
-        "head_p2": "caterpillar_p2_head.png",
-    }
-    for name, filename in _SPRITE_NAMES.items():
-        path = _ASSET_DIR / filename
-        if path.is_file():
-            try:
-                _cache[name] = _load_sprite_surface(path)
-            except (pygame.error, OSError):
-                _cache[name] = None
-        else:
-            _cache[name] = None
-    for legacy_key, legacy_file in legacy_heads.items():
-        if legacy_key not in _cache and (_ASSET_DIR / legacy_file).is_file():
-            try:
-                _cache[legacy_key] = _load_sprite_surface(_ASSET_DIR / legacy_file)
-            except (pygame.error, OSError):
-                pass
-
-
-def reload_sprites() -> None:
-    global _loaded
-    _loaded = False
-    _cache.clear()
-    init_sprites()
-
-
-def has_sprite(name: str) -> bool:
-    init_sprites()
-    return _cache.get(name) is not None
-
-
-def _body_sprite_key(player: int) -> str:
-    return "body_p1" if player == 0 else "body_p2"
-
-
-def _blit_sprite(
-    surf: pygame.Surface,
-    sprite: pygame.Surface,
-    x: float,
-    y: float,
-    diameter: float,
-    angle: float = 0.0,
-    alpha: int = 255,
-) -> None:
-    base = max(sprite.get_width(), sprite.get_height())
-    scale = diameter / base
-    tw = max(1, int(sprite.get_width() * scale))
-    th = max(1, int(sprite.get_height() * scale))
-    scaled = pygame.transform.smoothscale(sprite, (tw, th))
-    if alpha < 255:
-        scaled = scaled.copy()
-        scaled.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
-    if abs(angle) > 0.001:
-        scaled = pygame.transform.rotate(scaled, -math.degrees(angle))
-    rect = scaled.get_rect(center=(int(x), int(y)))
-    surf.blit(scaled, rect)
-
-
-def draw_body_sprite(
-    surf: pygame.Surface,
-    x: float,
-    y: float,
-    radius: float,
-    player: int,
-    alpha: int = 255,
-    angle: float = 0.0,
-) -> bool:
-    if not BODY_SPRITE_ENABLED:
-        return False
-    init_sprites()
-    sprite = _cache.get(_body_sprite_key(player))
-    if sprite is None:
-        return False
-    _blit_sprite(surf, sprite, x, y, radius * 2.0, angle, alpha)
-    return True
-
-
-def draw_head_sprite(
-    surf: pygame.Surface,
-    x: float,
-    y: float,
-    radius: float,
-    player: int,
-    heading: float,
-    alpha: int = 255,
-) -> bool:
-    """頭も体節と同じ直径で描画（スリザリオ風）"""
-    return draw_body_sprite(surf, x, y, radius, player, alpha, heading)
-
-
-def draw_segment_sprite(
-    surf: pygame.Surface,
-    x: float,
-    y: float,
-    radius: float,
-    player: int,
-    alpha: int = 255,
-) -> bool:
-    return draw_body_sprite(surf, x, y, radius, player, alpha)
+    path = _ASSET_DIR / _LEAF_FILE
+    if path.is_file():
+        try:
+            _cache = _load_sprite_surface(path)
+        except (pygame.error, OSError):
+            _cache = None
+    else:
+        _cache = None
 
 
 def draw_leaf_sprite(
@@ -237,8 +135,18 @@ def draw_leaf_sprite(
     alpha: int = 255,
 ) -> bool:
     init_sprites()
-    sprite = _cache.get("leaf")
-    if sprite is None:
+    if _cache is None:
         return False
-    _blit_sprite(surf, sprite, x, y, radius * 2.4, spin, alpha)
+    base = max(_cache.get_width(), _cache.get_height())
+    scale = (radius * 2.4) / base
+    tw = max(1, int(_cache.get_width() * scale))
+    th = max(1, int(_cache.get_height() * scale))
+    scaled = pygame.transform.smoothscale(_cache, (tw, th))
+    if alpha < 255:
+        scaled = scaled.copy()
+        scaled.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
+    if abs(spin) > 0.001:
+        scaled = pygame.transform.rotate(scaled, -math.degrees(spin))
+    rect = scaled.get_rect(center=(int(x), int(y)))
+    surf.blit(scaled, rect)
     return True

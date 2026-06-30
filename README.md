@@ -72,11 +72,14 @@ pip install -r requirements-build.txt
 | ファイル | 内容 |
 |----------|------|
 | `main.py` | エントリ・描画・入力 |
-| `game.py` | 試合ロジック |
+| `game.py` | 試合ロジック・体節壁 |
 | `physics.py` | 当たり判定 |
 | `entities.py` | 芋虫・パック・体節 |
+| `caterpillar_art.py` | 芋虫・葉っぱの描画 |
 | `ai.py` | CPU芋虫 |
 | `audio.py` | BGM / SE |
+| `effects.py` | ゴール演出 |
+| `sprites.py` | 葉っぱスプライト読み込み |
 | `constants.py` | 定数・バージョン |
 
 ## ライセンス
