@@ -87,6 +87,10 @@ class Puck:
     grind_started_at: float = -1.0
     grind_paddle: int = -1
     grind_escape_x: float = 0.0
+    dash_breach_until: float = 0.0
+    fence_chain_owner: int = -1
+    fence_chain_count: int = 0
+    fence_chain_until: float = 0.0
 
     @property
     def radius(self) -> float:

@@ -7,6 +7,13 @@ from typing import Optional
 from constants import (
     ELASTICITY,
     FENCE_BOOST,
+    FENCE_BREACH_BOOST,
+    FENCE_BREACH_DIR_MIN,
+    FENCE_BREACH_MOMENTUM_RETAIN,
+    FENCE_BREACH_SPEED,
+    FENCE_CHAIN_HITS_BEFORE_BREACH,
+    FENCE_CHAIN_WINDOW,
+    FENCE_DASH_BREACH_WINDOW,
     FENCE_HALF_WIDTH,
     HIT_JITTER_ANGLE,
     HIT_JITTER_CHANCE,
@@ -44,6 +51,7 @@ from constants import (
     RALLY_BOUNCE_BOOST,
     RALLY_BOUNCE_MAX_MULT,
     PUCK_MAX_SPEED,
+    PUCK_MIN_SPEED,
 )
 from entities import Fence, Paddle, Puck, clamp_speed, goal_bounds, table_rect
 
@@ -466,6 +474,7 @@ def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
             ignore_time = WALL_GRIND_SLIP_IGNORE
     elif paddle.is_dashing:
         _apply_dash_puck_hit(puck, paddle, pnx, pny)
+        puck.dash_breach_until = now + FENCE_DASH_BREACH_WINDOW
         ignore_time = PADDLE_DASH_PUCK_IGNORE_TIME
     elif is_close:
         _apply_close_puck_hit(puck, paddle, pnx, pny)
@@ -555,9 +564,13 @@ def resolve_puck_line(
     now: float,
     half_width: float,
     boost: float,
+    *,
+    breach: bool = False,
 ) -> bool:
     if now < puck.fence_ignore_until:
         return False
+
+    in_vx, in_vy = puck.vx, puck.vy
 
     cx, cy = _closest_on_segment(puck.x, puck.y, x1, y1, x2, y2)
     dist_x = puck.x - cx
@@ -585,16 +598,62 @@ def resolve_puck_line(
         puck.x += nx * overlap
         puck.y += ny * overlap
 
-    dot = puck.vx * nx + puck.vy * ny
-    if dot < 0:
-        puck.vx -= (1 + ELASTICITY) * dot * nx
-        puck.vy -= (1 + ELASTICITY) * dot * ny
-        puck.vx += nx * boost
-        puck.vy += ny * boost
+    if breach:
+        in_speed = math.hypot(in_vx, in_vy)
+        if in_speed > 1e-6:
+            ux, uy = in_vx / in_speed, in_vy / in_speed
+            out_speed = max(PUCK_MIN_SPEED, in_speed * FENCE_BREACH_MOMENTUM_RETAIN)
+            puck.vx = ux * (out_speed + boost)
+            puck.vy = uy * (out_speed + boost)
+        else:
+            puck.vx += nx * boost
+            puck.vy += ny * boost
+    else:
+        dot = puck.vx * nx + puck.vy * ny
+        if dot < 0:
+            puck.vx -= (1 + ELASTICITY) * dot * nx
+            puck.vy -= (1 + ELASTICITY) * dot * ny
+            puck.vx += nx * boost
+            puck.vy += ny * boost
 
     puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
-    puck.fence_ignore_until = now + 0.08
+    puck.fence_ignore_until = now + (0.05 if breach else 0.08)
     return True
+
+
+def _is_attacking_fence(puck: Puck, fence: Fence) -> bool:
+    """相手ゴール方向へ進んでいる体節へのヒットか"""
+    if fence.owner == 0:
+        return puck.vx < -FENCE_BREACH_DIR_MIN
+    return puck.vx > FENCE_BREACH_DIR_MIN
+
+
+def _should_breach_fence(puck: Puck, fence: Fence, now: float) -> bool:
+    if not _is_attacking_fence(puck, fence):
+        return False
+    if now < puck.dash_breach_until:
+        return True
+    if math.hypot(puck.vx, puck.vy) >= FENCE_BREACH_SPEED:
+        return True
+    return (
+        fence.owner == puck.fence_chain_owner
+        and now < puck.fence_chain_until
+        and puck.fence_chain_count >= FENCE_CHAIN_HITS_BEFORE_BREACH
+    )
+
+
+def _update_fence_chain(puck: Puck, fence: Fence, now: float, *, breached: bool) -> None:
+    if breached:
+        puck.fence_chain_owner = -1
+        puck.fence_chain_count = 0
+        puck.fence_chain_until = 0.0
+        return
+    if fence.owner == puck.fence_chain_owner and now < puck.fence_chain_until:
+        puck.fence_chain_count += 1
+    else:
+        puck.fence_chain_owner = fence.owner
+        puck.fence_chain_count = 1
+    puck.fence_chain_until = now + FENCE_CHAIN_WINDOW
 
 
 def _apply_rally_escalation(puck: Puck) -> None:
@@ -612,9 +671,15 @@ def _apply_rally_escalation(puck: Puck) -> None:
 
 def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> bool:
     hw = fence.half_width if fence.half_width > 0 else FENCE_HALF_WIDTH
+    breach = _should_breach_fence(puck, fence, now)
+    boost = FENCE_BREACH_BOOST if breach else FENCE_BOOST
     hit = resolve_puck_line(
-        puck, fence.x1, fence.y1, fence.x2, fence.y2, now, hw, FENCE_BOOST,
+        puck, fence.x1, fence.y1, fence.x2, fence.y2, now, hw, boost, breach=breach,
     )
     if hit:
-        _apply_rally_escalation(puck)
+        _update_fence_chain(puck, fence, now, breached=breach)
+        if breach:
+            puck.wall_bounces += 1
+        else:
+            _apply_rally_escalation(puck)
     return hit
