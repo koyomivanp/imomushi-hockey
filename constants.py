@@ -1,0 +1,197 @@
+"""ゲーム定数 — SPEC v0.6"""
+
+# リリース情報
+VERSION = "0.1.0"
+
+# タイトル（ウィンドウ・タイトル画面に使用）
+GAME_TITLE = "芋虫ホッケー"
+GAME_SUBTITLE = "這うと体節が壁になる、エアホッケー"
+GAME_TAGLINE = "先取3点 ／ 這うと体節 ／ Shiftでダッシュ"
+CPU_LABEL = "CPU芋虫"
+P1_LABEL = "P1芋虫"
+P2_LABEL = "P2芋虫"
+
+# 画面
+SCREEN_W = 800
+SCREEN_H = 600
+FPS = 60
+
+# 色 — 黒背景 × 白枠 × ネオン（Wiiホッケー風）
+BG_COLOR = (0, 0, 0)
+TABLE_COLOR = (6, 14, 8)
+TABLE_BORDER = (255, 255, 255)
+TABLE_BORDER_WIDTH = 4
+TABLE_GRID_COLOR = (22, 22, 28)
+CENTER_LINE_COLOR = (60, 60, 70)
+HUD_COLOR = (240, 240, 245)
+P1_COLOR = (0, 230, 255)
+P2_COLOR = (255, 70, 190)
+P1_NEON = (0, 255, 255)
+P2_NEON = (255, 90, 210)
+PUCK_COLOR = (255, 255, 255)
+PUCK_NEON_HEAT = (255, 140, 80)
+ITEM_COLORS = {
+    "fence": (255, 90, 210),
+}
+ASSIST_COLOR = (90, 55, 30)
+BEETLE_BODY = (60, 38, 22)
+BEETLE_HORN = (40, 25, 15)
+BEETLE_TRAIL = (120, 200, 140)
+FENCE_COLOR = P1_NEON
+BAR_COLOR = (160, 210, 255)
+RAY_COLOR = (100, 255, 255)
+WIND_COLOR = (180, 230, 255)
+
+# テーブル（画面の 80% 以上）
+HUD_H = 52
+TABLE_MARGIN_X = 16
+TABLE_Y = HUD_H + 8
+TABLE_W = SCREEN_W - TABLE_MARGIN_X * 2
+TABLE_H = SCREEN_H - TABLE_Y - 16
+
+# ゴール
+GOAL_WIDTH_RATIO = 0.29
+
+# 勝敗
+WIN_SCORE = 3
+GOAL_RESET_DELAY = 1.5
+
+# ラケット（横向きコートでは高さ基準、従来比 1/4）
+PADDLE_SPEED = 310.0
+PADDLE_DASH_SPEED = 500.0
+PADDLE_WIDTH_RATIO = 0.18 * 0.25 * 1.35  # やや小さめ（直径 ≈ コート高さの 6%）
+PADDLE_SIZE_AXIS = "height"  # 横向きコート: テーブル高さ基準
+_CATERPILLAR_AXIS = TABLE_H if PADDLE_SIZE_AXIS == "height" else TABLE_W
+CATERPILLAR_BODY_RADIUS = _CATERPILLAR_AXIS * PADDLE_WIDTH_RATIO / 2
+PADDLE_PUCK_COOLDOWN = 0.12  # 互換用（分離判定が主）
+PADDLE_PUCK_SEPARATION = 6.0   # 押し出し余白（px）
+PUCK_PADDLE_MIN_EXIT = 140.0   # ヒット後ラケットから離れる最低速度
+PADDLE_HIT_FORGIVENESS = 10.0  # 当たり判定の拡張（px）
+PADDLE_PUCK_IMPULSE = 1.15     # ラケットの動きをパックへ伝える倍率
+PADDLE_CHASE_HIT_SPEED = 55.0  # 追いかけヒット
+PADDLE_PUCK_IGNORE_TIME = 0.10 # 同一ラケットへの連続ヒット防止（秒）
+# 近接ヒット（歩き頭ドリブル防止 — 自ラケット付近では歩きより速くはじく）
+PADDLE_CLOSE_PUCK_MARGIN = 26.0         # この距離以内を「近接」
+PADDLE_CLOSE_PUCK_MIN_EXIT = 385.0        # 最低退出（PADDLE_SPEED=310 より速く）
+PADDLE_CLOSE_PUCK_IMPULSE = 1.30          # ラケット速度の伝達倍率
+PADDLE_CLOSE_PUCK_IGNORE_TIME = 0.18      # 再ヒット防止（秒）
+PADDLE_CLOSE_PUCK_SEPARATION = 11.0       # 押し出し距離（px）
+PADDLE_CLOSE_PUCK_SPEED_RATIO = 1.18      # ラケット速度に対する最低退出の割合
+# ダッシュヒット（頭ドリブル防止）
+PADDLE_DASH_PUCK_MIN_EXIT = 340.0       # 最低退出速度（通常より強め）
+PADDLE_DASH_PUCK_IMPULSE = 1.55         # ラケット速度の伝達倍率
+PADDLE_DASH_PUCK_IGNORE_TIME = 0.24     # 再ヒット防止（秒）
+PADDLE_DASH_PUCK_SEPARATION = 16.0      # 押し出し距離（px）
+PADDLE_DASH_PUCK_SPEED_RATIO = 0.72     # ラケット速度に対する最低退出の割合
+PADDLE_HEAD_ON_DOT = 0.52               # これ以上=正面ヒット（移動方向にはじく）
+# 正面反射 — ラケットより速く離脱（頭ドリブル防止・エアホッケー慣例）
+PADDLE_HEAD_ON_MIN_EXIT_RATIO = 1.22    # 法線方向退出 ≧ ラケット速度 × この倍率
+PADDLE_HEAD_ON_MIN_EXIT = PADDLE_SPEED * PADDLE_HEAD_ON_MIN_EXIT_RATIO
+PADDLE_HEAD_ON_SEP_MARGIN = 72.0        # max(上記, paddle_speed + margin)
+PADDLE_HEAD_ON_REL_SEP = 95.0           # 法線方向の相対離脱速度下限
+PADDLE_HEAD_ON_IGNORE_TIME = 0.24       # 正面ヒット後の再接触防止（秒）
+# 壁際挟み（短時間沿壁 → 左右へ抜け）
+WALL_GRIND_MARGIN = 24.0
+WALL_GRIND_ALLOW_TIME = 0.40
+WALL_GRIND_MAX_SPEED = 265.0
+WALL_GRIND_SLIP_EXIT = 330.0
+WALL_GRIND_SLIP_IGNORE = 0.22
+WALL_PINCH_ESCAPE_BIAS = 0.62       # 空きが広い側へ逃がす確率
+# ヒット方向のブレ（再現性を少し落とす）
+HIT_JITTER_CHANCE = 0.32            # 横・斜めヒット
+HIT_JITTER_HEAD_CHANCE = 0.24       # 正面ヒット
+HIT_JITTER_ANGLE = 0.26             # ラジアン（最大約15°）
+BIG_PADDLE_MULT = 2.0
+
+# パック
+PUCK_RADIUS = 15
+MAX_PUCKS = 20
+PUCK_AUTO_SPAWN_ENABLED = False      # 時間経過の自動増殖（対戦の1ゴール重み優先でオフ）
+PUCK_AUTO_SPAWN_INTERVAL = 8.0       # 試合開始時のパック増加間隔（秒）
+PUCK_AUTO_SPAWN_INTERVAL_MIN = 4.0   # 後半に短縮される下限
+PUCK_ESCALATION_TIME = 90.0          # この秒数で最短間隔まで到達
+PUCK_BURST_COUNT = 10                # 増殖アイテムで出るパック数（レア枠）
+PUCK_MAX_SPEED = 430.0
+PUCK_MIN_SPEED = 80.0
+ELASTICITY = 1.0
+
+# アイテム
+ITEM_FIRST_SPAWN = 1.5
+ITEM_SPAWN_INTERVAL = 1.5
+MAX_ITEMS_ON_FIELD = 3
+ITEM_RADIUS = 14
+ITEM_FALL_SPEED = 120.0
+ITEM_STACK_MAX = 3
+
+# 味方兵隊（お助けキャラ）
+GUARD_ENTER_SPEED = 150.0
+GUARD_DEFENSE_X_RATIO = 0.22   # 自陣奥の守備ライン
+GUARD_RADIUS = 18.0
+GUARD_MAX_COUNT = 3
+GUARD_FIRE_INTERVAL = 0.5
+GUARD_THREAT_MIN = 70.0        # これ未満の脅威パックには撃たない
+GUARD_COLOR = (70, 110, 200)
+GUARD_HAT_COLOR = (210, 70, 70)
+
+# 効果時間
+BIG_PADDLE_DURATION = 5.0
+ASSIST_DURATION = 8.0
+RAY_GUN_DURATION = 5.0
+RAY_FIRE_INTERVAL = 0.15
+RAY_BALL_SPEED = 720.0
+RAY_BALL_RADIUS = 7
+# ノックバック（ラケットは吹っ飛びのみ・操作不能にしない）
+RAY_KNOCKBACK = 650.0
+ASSIST_KNOCKBACK = 700.0
+FENCE_DURATION = 12.0
+FENCE_DELAY = 1.5
+FENCE_HALF_WIDTH = CATERPILLAR_BODY_RADIUS
+FENCE_BOOST = 200.0
+FENCE_MIN_LENGTH = 12.0
+FENCE_ONE_SHOT = True
+
+# 軌跡壁（通常移動で生成・ダッシュ中は途切れ）
+TRAIL_SEGMENT_INTERVAL = CATERPILLAR_BODY_RADIUS * 1.82
+TRAIL_MAX_GAP = CATERPILLAR_BODY_RADIUS * 2.1
+TRAIL_MIN_SPEED = 50.0
+TRAIL_WALL_LIFETIME = 2.6
+TRAIL_WALL_MAX_PER_PLAYER = 10
+TRAIL_GOAL_ZONE_RATIO = 0.22
+TRAIL_GOAL_LIFETIME = 0.45
+TRAIL_SPAWN_COOLDOWN = 0.07
+TRAIL_SPAWN_CLEARANCE = 5.0
+TRAIL_FADE_START_RATIO = 0.45       # 消滅直前に全体が薄くなる
+TRAIL_WALL_MIN_BRIGHTNESS = 0.28    # いちばん古い壁の明るさ下限
+TRAIL_CENTER_ZONE_RATIO = 0.18
+TRAIL_CENTER_BONUS = 0.5
+
+# 効果音・BGM
+SOUND_ENABLED = True
+BGM_ENABLED = True
+BGM_TITLE_VOLUME = 0.42
+BGM_BATTLE_VOLUME = 0.30   # 対戦中：メロディあり・SEと両立
+
+# ラリーエスカレーション（壁反射のたびに加速）
+RALLY_BOUNCE_BOOST = 0.045
+RALLY_BOUNCE_MAX_MULT = 1.7
+
+# 落下アイテム（柵スキル本体化のためオフ）
+ITEMS_ENABLED = False
+WIND_DURATION = 3.0
+WIND_ACCEL = 980.0
+BAR_DURATION = 5.0
+BAR_GROW_TIME = 0.3
+BAR_HALF_WIDTH = 5.0
+BAR_BOOST = 180.0
+BAR_CENTER_X_RATIO = 0.25    # 自陣の水平中央に固定
+BAR_LEVEL_HEIGHT = (0.5, 0.75, 1.0)  # 重ね掛け1〜3の最大高さ（コート縦比）
+BAR_SEGMENT_HEIGHT = 56.0   # バーを縦方向にザックリ分割する長さ（px）
+BAR_RAY_HITS_TO_BREAK = 4   # 光線銃が同一区画に当たると壊れる回数
+PADDLE_KB_IMPULSE = 0.38       # strength → 初速
+PADDLE_KB_DRAG = 5.2           # 減衰（大きいほど早く止まる）
+PADDLE_KB_TRAIL_TIME = 0.34    # 残像の表示秒数
+PADDLE_KB_TRAIL_STEPS = 7      # 命中時に補間する残像コマ数
+PADDLE_HIT_COOLDOWN = 0.35     # 連続ヒット防止（操作不能ではない）
+
+# カウントダウン
+COUNTDOWN_START = 3
