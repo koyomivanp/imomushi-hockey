@@ -91,6 +91,8 @@ class Puck:
     fence_chain_owner: int = -1
     fence_chain_count: int = 0
     fence_chain_until: float = 0.0
+    prev_x: float = 0.0
+    prev_y: float = 0.0
 
     @property
     def radius(self) -> float:
@@ -198,4 +200,13 @@ class Fence:
 
 def spawn_center_puck() -> Puck:
     rect = table_rect()
-    return Puck(x=rect.centerx, y=rect.centery, vx=random.uniform(-80, 80), vy=random.uniform(-80, 80))
+    x = rect.centerx
+    y = rect.centery
+    return Puck(
+        x=x,
+        y=y,
+        prev_x=x,
+        prev_y=y,
+        vx=random.uniform(-80, 80),
+        vy=random.uniform(-80, 80),
+    )

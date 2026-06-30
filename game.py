@@ -292,6 +292,16 @@ class Match:
             for puck in self.pucks:
                 if puck.carried_by >= 0:
                     continue
+                for paddle in self.paddles:
+                    if resolve_puck_paddle(puck, paddle, now):
+                        if self.audio is not None:
+                            self.audio.play_wall_bounce(puck.wall_bounces, now)
+
+            for puck in self.pucks:
+                if puck.carried_by >= 0:
+                    continue
+                puck.prev_x = puck.x
+                puck.prev_y = puck.y
                 puck.x += puck.vx * dt
                 puck.y += puck.vy * dt
 
@@ -381,6 +391,8 @@ class Match:
                 puck.fence_chain_owner = -1
                 puck.fence_chain_count = 0
                 puck.fence_chain_until = 0.0
+                puck.prev_x = puck.x
+                puck.prev_y = puck.y
 
             self.fences.clear()
             for paddle in self.paddles:

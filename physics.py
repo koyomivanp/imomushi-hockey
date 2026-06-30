@@ -26,11 +26,12 @@ from constants import (
     PADDLE_CLOSE_PUCK_SEPARATION,
     PADDLE_CLOSE_PUCK_SPEED_RATIO,
     PADDLE_DASH_PUCK_IGNORE_TIME,
-    PADDLE_DASH_PUCK_IMPULSE,
     PADDLE_DASH_PUCK_MIN_EXIT,
     PADDLE_DASH_PUCK_SEPARATION,
     PADDLE_DASH_PUCK_SPEED_RATIO,
+    PADDLE_DASH_PUCK_SEP_MARGIN,
     PADDLE_DASH_SWEEP_FORGIVENESS,
+    PUCK_DASH_HIT_MAX_SPEED,
     PADDLE_HEAD_ON_DOT,
     PADDLE_HEAD_ON_IGNORE_TIME,
     PADDLE_HEAD_ON_MIN_EXIT,
@@ -368,44 +369,58 @@ def _apply_boosted_puck_hit(
         puck.vy += sy * boost
 
 
+def _clamp_dash_hit_speed(vx: float, vy: float) -> tuple[float, float]:
+    speed = math.hypot(vx, vy)
+    if speed < 1e-6:
+        return 0.0, 0.0
+    if speed > PUCK_DASH_HIT_MAX_SPEED:
+        scale = PUCK_DASH_HIT_MAX_SPEED / speed
+        return vx * scale, vy * scale
+    if speed < PUCK_MIN_SPEED:
+        scale = PUCK_MIN_SPEED / speed
+        return vx * scale, vy * scale
+    return vx, vy
+
+
 def _apply_dash_puck_hit(puck: Puck, paddle: Paddle, pnx: float, pny: float) -> None:
-    """ダッシュ中: 移動方向へ強く吹き飛ばし（すり抜け後も進行方向でヒット）"""
-    mvx, mvy, speed = _paddle_move_unit(paddle)
-    if speed < 24.0:
+    """ダッシュ中: 進行方向へダッシュ速度より速くはじく（頭ドリブル防止）"""
+    mvx, mvy, paddle_speed = _paddle_move_unit(paddle)
+    if paddle_speed < 24.0:
         ldx, ldy = paddle.last_dir
         llen = math.hypot(ldx, ldy)
         if llen > 1e-6:
             mvx, mvy = ldx / llen, ldy / llen
-    sx, sy = _maybe_jitter_dir(mvx, mvy, head_on=True)
-    paddle_speed = math.hypot(paddle.vx, paddle.vy)
-    min_exit = max(PADDLE_DASH_PUCK_MIN_EXIT, paddle_speed * PADDLE_DASH_PUCK_SPEED_RATIO)
-    puck.vx = sx * min_exit + paddle.vx * PADDLE_DASH_PUCK_IMPULSE
-    puck.vy = sy * min_exit + paddle.vy * PADDLE_DASH_PUCK_IMPULSE
+        paddle_speed = PADDLE_DASH_SPEED
+    min_exit = max(
+        PADDLE_DASH_PUCK_MIN_EXIT,
+        paddle_speed * PADDLE_DASH_PUCK_SPEED_RATIO,
+        paddle_speed + PADDLE_DASH_PUCK_SEP_MARGIN,
+    )
+    puck.vx = mvx * min_exit
+    puck.vy = mvy * min_exit
+    puck.vx, puck.vy = _clamp_dash_hit_speed(puck.vx, puck.vy)
 
 
-def _swept_dash_puck_contact(
-    paddle: Paddle,
-    puck: Puck,
-    pr: float,
-    touch_dist: float,
-) -> Optional[tuple[float, float, float, float, float]]:
-    """ダッシュ移動経路上の葉っぱ接触。返値: (paddle_x, paddle_y, pnx, pny, dist)"""
-    ax, ay = paddle.prev_x, paddle.prev_y
-    bx, by = paddle.x, paddle.y
+def _segment_point_circle_hit(
+    ax: float, ay: float,
+    bx: float, by: float,
+    px: float, py: float,
+    hit_radius: float,
+) -> Optional[tuple[float, float, float, float, float, float]]:
+    """線分→点円。返値: (paddle_x, paddle_y, t, dist, pnx, pny)"""
     dx, dy = bx - ax, by - ay
     seg_len_sq = dx * dx + dy * dy
     if seg_len_sq < 1e-6:
         return None
 
-    sweep_radius = touch_dist + PADDLE_DASH_SWEEP_FORGIVENESS
-    t = ((puck.x - ax) * dx + (puck.y - ay) * dy) / seg_len_sq
+    t = ((px - ax) * dx + (py - ay) * dy) / seg_len_sq
     t = max(0.0, min(1.0, t))
     cx = ax + dx * t
     cy = ay + dy * t
-    dist_x = puck.x - cx
-    dist_y = puck.y - cy
+    dist_x = px - cx
+    dist_y = py - cy
     dist = math.hypot(dist_x, dist_y)
-    if dist >= sweep_radius:
+    if dist >= hit_radius:
         return None
 
     if dist > 1e-6:
@@ -414,7 +429,45 @@ def _swept_dash_puck_contact(
         pnx, pny = _normalize(dx, dy)
         if pnx == 0.0 and pny == 0.0:
             pnx, pny = 1.0, 0.0
+    return cx, cy, t, dist, pnx, pny
+
+
+def _swept_dash_puck_contact(
+    paddle: Paddle,
+    puck: Puck,
+    pr: float,
+    touch_dist: float,
+) -> Optional[tuple[float, float, float, float, float]]:
+    """ダッシュ移動経路×葉っぱ（現位置・直前位置）の接触"""
+    sweep_radius = touch_dist + PADDLE_DASH_SWEEP_FORGIVENESS
+    best: Optional[tuple[float, float, float, float, float, float]] = None
+    for px, py in ((puck.x, puck.y), (puck.prev_x, puck.prev_y)):
+        hit = _segment_point_circle_hit(
+            paddle.prev_x, paddle.prev_y, paddle.x, paddle.y, px, py, sweep_radius,
+        )
+        if hit is None:
+            continue
+        if best is None or hit[2] < best[2]:
+            best = hit
+    if best is None:
+        return None
+    cx, cy, _t, dist, pnx, pny = best
     return cx, cy, pnx, pny, dist
+
+
+def _puck_stuck_on_dash_head(puck: Puck, paddle: Paddle, pr: float) -> bool:
+    """ダッシュ中に葉っぱが頭の前に張り付いている"""
+    mvx, mvy, paddle_speed = _paddle_move_unit(paddle)
+    if paddle_speed < 24.0:
+        return False
+    dx = puck.x - paddle.x
+    dy = puck.y - paddle.y
+    dist = math.hypot(dx, dy)
+    max_dist = pr + puck.radius + PADDLE_DASH_PUCK_SEPARATION + 10.0
+    if dist > max_dist:
+        return False
+    ahead = dx * mvx + dy * mvy
+    return ahead > -4.0 and ahead < max_dist
 
 
 def _place_puck_after_dash_hit(
@@ -451,6 +504,15 @@ def _is_close_puck_contact(dist: float, paddle_radius: float, puck_radius: float
 
 def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
     pr = paddle.radius(now)
+
+    if paddle.is_dashing and _puck_stuck_on_dash_head(puck, paddle, pr):
+        paddle_hit_x, paddle_hit_y = paddle.x, paddle.y
+        _place_puck_after_dash_hit(puck, paddle, pr, paddle_hit_x, paddle_hit_y)
+        _apply_dash_puck_hit(puck, paddle, 0.0, 0.0)
+        puck.dash_breach_until = now + FENCE_DASH_BREACH_WINDOW
+        mark_puck_paddle_hit(puck, paddle, now, PADDLE_DASH_PUCK_IGNORE_TIME)
+        return True
+
     dx = puck.x - paddle.x
     dy = puck.y - paddle.y
     dist = math.hypot(dx, dy)
@@ -563,7 +625,10 @@ def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
         ignore_time = PADDLE_PUCK_IGNORE_TIME
         _reset_wall_grind(puck)
 
-    puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
+    if paddle.is_dashing:
+        puck.vx, puck.vy = _clamp_dash_hit_speed(puck.vx, puck.vy)
+    else:
+        puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
     mark_puck_paddle_hit(puck, paddle, now, ignore_time)
     return True
 
