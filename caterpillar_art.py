@@ -66,6 +66,122 @@ def _circle_stamp(
     pygame.draw.circle(surf, body, (int(cx), int(cy)), r)
 
 
+def _gel_circle_stamp(
+    surf: pygame.Surface,
+    cx: float,
+    cy: float,
+    radius: float,
+    player: int,
+    fade: float,
+    now: float,
+    pulse_phase: float,
+) -> None:
+    """艶・グラデ・プルプル感のある体節スタンプ（タイトル枠用）"""
+    body, belly, outline = _palette(player)
+    f = max(0.0, min(1.0, fade))
+    pulse = 1.0 + 0.07 * math.sin(now * 3.1 + pulse_phase)
+    wobble_x = math.sin(now * 2.4 + pulse_phase * 1.3) * radius * 0.035
+    wobble_y = math.cos(now * 2.7 + pulse_phase * 0.9) * radius * 0.03
+    px = cx + wobble_x
+    py = cy + wobble_y
+    r = max(3.0, radius * pulse)
+    ir, iyr = int(px), int(py)
+    ri = max(3, int(r))
+
+    shadow = _tint(tuple(max(0, c - 48) for c in body), f * 0.65)
+    pygame.draw.circle(surf, shadow, (ir + 2, iyr + 3), ri)
+
+    base = _tint(body, f * 0.92)
+    pygame.draw.circle(surf, base, (ir, iyr), ri)
+
+    belly_c = _tint(belly, f * 0.88)
+    pygame.draw.circle(surf, belly_c, (ir - max(1, ri // 4), iyr - max(1, ri // 3)), max(2, int(ri * 0.62)))
+
+    spec = (
+        min(255, belly[0] + 55),
+        min(255, belly[1] + 60),
+        min(255, belly[2] + 45),
+    )
+    pygame.draw.circle(
+        surf, _tint(spec, f * 0.75),
+        (ir - max(1, ri // 3), iyr - max(1, ri // 2)),
+        max(1, int(ri * 0.22)),
+    )
+
+    rim = _tint(outline, f * 0.55)
+    pygame.draw.circle(surf, rim, (ir, iyr), ri, max(1, ri // 8))
+
+
+def _stamp_line_gel(
+    surf: pygame.Surface,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    radius: float,
+    player: int,
+    now: float,
+    phase_base: float,
+) -> None:
+    dx, dy = x2 - x1, y2 - y1
+    length = math.hypot(dx, dy)
+    if length < 0.5:
+        return
+    ux, uy = dx / length, dy / length
+    extend = radius * 0.92
+    sx = x1 - ux * extend
+    sy = y1 - uy * extend
+    ex = x2 + ux * extend
+    ey = y2 + uy * extend
+    span = math.hypot(ex - sx, ey - sy)
+    spacing = max(2.0, radius * 0.07)
+    steps = max(1, int(span / spacing))
+    for i in range(steps + 1):
+        t = i / steps
+        px = sx + (ex - sx) * t
+        py = sy + (ey - sy) * t
+        _gel_circle_stamp(surf, px, py, radius, player, 1.0, now, phase_base + i * 0.38)
+
+
+def _gel_corner_cap(
+    surf: pygame.Surface,
+    cx: float,
+    cy: float,
+    radius: float,
+    player: int,
+    now: float,
+    phase: float,
+) -> None:
+    _gel_circle_stamp(surf, cx, cy, radius * 1.14, player, 1.0, now, phase)
+
+
+def _draw_gel_head(
+    surf: pygame.Surface,
+    x: float,
+    y: float,
+    radius: float,
+    player: int,
+    heading: float,
+    now: float,
+) -> None:
+    """タイトル用 — 艶のある頭"""
+    body, belly, outline = _palette(player)
+    r = radius
+    pulse = 1.0 + 0.05 * math.sin(now * 2.6)
+    ri = max(4, int(r * pulse))
+    ix, iy = int(x), int(y)
+
+    pygame.draw.circle(surf, _tint(tuple(max(0, c - 40) for c in body), 0.6), (ix + 2, iy + 2), ri + 1)
+    pygame.draw.circle(surf, _tint(body, 0.95), (ix, iy), ri)
+    pygame.draw.circle(surf, _tint(belly, 0.85), (ix - ri // 4, iy - ri // 3), max(3, int(ri * 0.58)))
+    pygame.draw.circle(
+        surf, _tint((min(255, belly[0] + 50), min(255, belly[1] + 55), min(255, belly[2] + 40)), 0.7),
+        (ix - ri // 3, iy - ri // 2), max(2, ri // 5),
+    )
+    pygame.draw.circle(surf, _tint(outline, 0.5), (ix, iy), ri, max(1, ri // 7))
+    draw_sketch_face(surf, x, y, radius, heading, player)
+
+
 def _elongated_stamp(
     surf: pygame.Surface,
     cx: float,
@@ -485,6 +601,125 @@ def draw_caterpillar_head(
 
     draw_head_circle(surf, x, y, radius, player)
     draw_sketch_face(surf, x, y, radius, heading, player)
+
+
+def _stamp_polyline_gel(
+    surf: pygame.Surface,
+    points: list[tuple[float, float]],
+    radius: float,
+    player: int,
+    now: float,
+    phase: float,
+    *,
+    body_fade: float = 1.0,
+) -> None:
+    if len(points) < 2:
+        return
+    poly = [(x, y, body_fade) for x, y in points]
+    spacing = max(2.0, radius * 0.07)
+    for i, (px, py, f) in enumerate(_rounded_path_samples(poly, radius, spacing)):
+        _gel_circle_stamp(surf, px, py, radius, player, f, now, phase + i * 0.38)
+
+
+def _head_heading_at_path_end(points: list[tuple[float, float]]) -> float:
+    if len(points) < 2:
+        return 0.0
+    return math.atan2(points[-1][1] - points[-2][1], points[-1][0] - points[-2][0])
+
+
+def _draw_title_worm_body(
+    surf: pygame.Surface,
+    points: list[tuple[float, float]],
+    player: int,
+    body_radius: float,
+) -> None:
+    """タイトル用 — 対戦と同じスタンプ連打の体"""
+    poly = [(x, y, 1.0) for x, y in points]
+    _stamp_along_polyline(surf, poly, body_radius, player)
+
+
+def _draw_title_worm_head(
+    surf: pygame.Surface,
+    points: list[tuple[float, float]],
+    player: int,
+    head_radius: float,
+    *,
+    wobble: float = 0.0,
+) -> None:
+    """進行方向の先端（パス終点）にバトル同様の頭"""
+    hx = points[-1][0] + wobble
+    hy = points[-1][1]
+    heading = _head_heading_at_path_end(points)
+    draw_head_circle(surf, hx, hy, head_radius, player)
+    draw_sketch_face(surf, hx, hy, head_radius, heading, player)
+
+
+def draw_title_leaf_scene(surf: pygame.Surface, now: float) -> None:
+    """左側 — 2頭の芋虫が葉っぱを囲む（タイトルロゴと被らない位置）"""
+    from constants import (
+        CATERPILLAR_BODY_RADIUS,
+        SCREEN_H,
+        SCREEN_W,
+        TITLE_LEAF_X,
+        TITLE_LEAF_Y,
+        TITLE_SCENE_ARC_LIFT,
+        TITLE_SCENE_BODY_SCALE,
+        TITLE_SCENE_SIDE_GAP,
+        TITLE_SCENE_SPAN,
+    )
+
+    body_r = CATERPILLAR_BODY_RADIUS * TITLE_SCENE_BODY_SCALE
+    head_r = body_r
+    lx, ly = TITLE_LEAF_X, TITLE_LEAF_Y
+    span = TITLE_SCENE_SPAN
+    arc_lift = TITLE_SCENE_ARC_LIFT
+    side = TITLE_SCENE_SIDE_GAP
+
+    spotlight = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    pygame.draw.ellipse(
+        spotlight, (36, 64, 42, 42),
+        pygame.Rect(int(lx - 175), int(ly - 200), 350, 340),
+    )
+    surf.blit(spotlight, (0, 0))
+
+    pulse = 0.5 + 0.5 * math.sin(now * 1.6)
+    glow_r = int(38 + 5 * pulse)
+    pygame.draw.circle(surf, (24, 44, 28), (int(lx), int(ly)), glow_r + 6)
+    pygame.draw.circle(
+        surf,
+        (int(50 + 20 * pulse), int(90 + 30 * pulse), int(55 + 15 * pulse)),
+        (int(lx), int(ly)),
+        glow_r,
+    )
+
+    p1_pts = [
+        (lx - span, ly - side),
+        (lx - span * 0.4, ly - arc_lift),
+        (lx, ly - arc_lift - 18),
+        (lx + span * 0.4, ly - arc_lift),
+        (lx + span, ly - side),
+    ]
+    p2_pts = [
+        (lx + span, ly + side),
+        (lx + span * 0.4, ly + arc_lift),
+        (lx, ly + arc_lift + 18),
+        (lx - span * 0.4, ly + arc_lift),
+        (lx - span, ly + side),
+    ]
+
+    _draw_title_worm_body(surf, p1_pts, 0, body_r)
+    _draw_title_worm_body(surf, p2_pts, 1, body_r)
+
+    wob = math.sin(now * 1.4) * 0.6
+    _draw_title_worm_head(surf, p1_pts, 0, head_r, wobble=wob)
+    _draw_title_worm_head(surf, p2_pts, 1, head_r, wobble=-wob)
+
+    draw_leaf_puck(surf, lx, ly, 28.0, now)
+
+
+def draw_title_frame_caterpillars(surf: pygame.Surface, now: float) -> None:
+    """互換 — 葉っぱ囲みシーンへ"""
+    draw_title_leaf_scene(surf, now)
 
 
 def draw_leaf_puck(

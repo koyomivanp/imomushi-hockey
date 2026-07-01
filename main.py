@@ -11,8 +11,6 @@ from constants import (
     CENTER_LINE_COLOR,
     CPU_LABEL,
     FPS,
-    GAME_SUBTITLE,
-    GAME_TAGLINE,
     GAME_TITLE,
     HUD_COLOR,
     P1_COLOR,
@@ -37,14 +35,29 @@ from constants import (
     VERSION,
     WIN_SCORE,
 )
-from ai import CPUAI, CPU_DIFFICULTY_ORDER, DEFAULT_CPU_DIFFICULTY, DIFFICULTIES
+from ai import CPUAI, CPU_DIFFICULTY_ORDER, DEFAULT_CPU_DIFFICULTY
 from audio import SoundManager
 from entities import table_rect, goal_bounds
 from game import GameState, Match
 from caterpillar_art import draw_player_fences
-from effects import draw_goal_celebration
+from effects import draw_breach_sparks, draw_goal_celebration
+from screens import (
+    draw_cpu_difficulty_screen,
+    draw_fade_screen,
+    draw_result_screen,
+    draw_title_screen,
+    draw_tips_screen,
+    tips_for_match,
+)
 from sprites import init_sprites
 from visuals import make_window_icon
+
+ARENA_STATES = frozenset({
+    GameState.COUNTDOWN,
+    GameState.PLAYING,
+    GameState.PAUSE,
+    GameState.RESULT,
+})
 
 
 def draw_table(surf: pygame.Surface) -> None:
@@ -133,95 +146,6 @@ def draw_hud(
         surf.blit(mute_text, (SCREEN_W - mute_text.get_width() - 12, 48))
 
 
-def draw_version(surf: pygame.Surface, font: pygame.font.Font) -> None:
-    text = font.render(f"v{VERSION}", True, (70, 70, 78))
-    surf.blit(text, (10, SCREEN_H - text.get_height() - 8))
-
-
-def draw_help_overlay(surf: pygame.Surface, font: pygame.font.Font, small: pygame.font.Font) -> None:
-    overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 200))
-    surf.blit(overlay, (0, 0))
-
-    title = font.render("操作説明", True, (255, 255, 255))
-    surf.blit(title, title.get_rect(center=(SCREEN_W // 2, 72)))
-
-    lines = [
-        "【ルール】先取3点で勝ち。葉っぱ（パック）を相手ゴールへ。",
-        "【体節】通常移動で這った跡が壁になる。古い体節から消える。",
-        "【ダッシュ】Shift+移動で高速移動。体節は出ず、壁をすり抜ける。",
-        "",
-        f"{P1_LABEL}（左）: WASD 移動 / Shift+移動でダッシュ",
-        f"{P2_LABEL}（右）: 矢印キー / Shift+移動でダッシュ",
-        "",
-        f"タイトル: 1={CPU_LABEL}  2=2芋虫対戦  3/4/5=難易度  Space=開始",
-        "対戦中: P/Esc=ポーズ  M=BGM  F=フルスクリーン",
-        "",
-        "H または Esc で閉じる",
-    ]
-    y = 118
-    for line in lines:
-        color = (180, 180, 190) if line else (0, 0, 0, 0)
-        if line:
-            t = small.render(line, True, color)
-            surf.blit(t, t.get_rect(center=(SCREEN_W // 2, y)))
-        y += 22
-
-
-def draw_title(
-    surf: pygame.Surface,
-    title_font: pygame.font.Font,
-    sub_font: pygame.font.Font,
-    vs_cpu: bool,
-    cpu_difficulty: str,
-    bgm_muted: bool,
-    show_help: bool,
-) -> None:
-    t = title_font.render(GAME_TITLE, True, (255, 255, 255))
-    surf.blit(t, t.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 96)))
-
-    sub = sub_font.render(GAME_SUBTITLE, True, (140, 200, 220))
-    surf.blit(sub, sub.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 52)))
-
-    tag = sub_font.render(GAME_TAGLINE, True, (100, 100, 110))
-    surf.blit(tag, tag.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 28)))
-
-    mode1 = f"▶ 1: vs {CPU_LABEL}" if vs_cpu else f"  1: vs {CPU_LABEL}"
-    mode2 = "▶ 2: 2芋虫対戦" if not vs_cpu else "  2: 2芋虫対戦"
-    m1 = sub_font.render(mode1, True, P1_NEON if vs_cpu else (100, 100, 110))
-    m2 = sub_font.render(mode2, True, P2_NEON if not vs_cpu else (100, 100, 110))
-    surf.blit(m1, m1.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 2)))
-    surf.blit(m2, m2.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 28)))
-
-    if vs_cpu:
-        diff_parts = []
-        for key in CPU_DIFFICULTY_ORDER:
-            d = DIFFICULTIES[key]
-            label = f"▶ {d.label}" if key == cpu_difficulty else f"  {d.label}"
-            diff_parts.append((label, key == cpu_difficulty))
-        diff_y = SCREEN_H // 2 + 58
-        x = SCREEN_W // 2 - 130
-        for label, active in diff_parts:
-            color = P2_NEON if active else (100, 100, 110)
-            part = sub_font.render(label, True, color)
-            surf.blit(part, (x, diff_y))
-            x += part.get_width() + 20
-        ctrl_y = SCREEN_H // 2 + 86
-    else:
-        ctrl_y = SCREEN_H // 2 + 64
-
-    hint = "3/4/5: 難易度  Space: 開始  H: 説明  M: BGM  F: 全画面"
-    s = sub_font.render(hint, True, (140, 140, 150))
-    surf.blit(s, s.get_rect(center=(SCREEN_W // 2, ctrl_y)))
-    if bgm_muted:
-        mute = sub_font.render("BGM OFF", True, (120, 120, 130))
-        surf.blit(mute, mute.get_rect(center=(SCREEN_W // 2, ctrl_y + 22)))
-
-    draw_version(surf, sub_font)
-    if show_help:
-        draw_help_overlay(surf, title_font, sub_font)
-
-
 def draw_pause(surf: pygame.Surface, hud_font: pygame.font.Font, small: pygame.font.Font) -> None:
     overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 120))
@@ -230,32 +154,6 @@ def draw_pause(surf: pygame.Surface, hud_font: pygame.font.Font, small: pygame.f
     surf.blit(pause_t, pause_t.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 24)))
     hint = small.render("P: 再開    Esc: タイトルへ", True, (180, 180, 190))
     surf.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 16)))
-
-
-def draw_result(
-    surf: pygame.Surface,
-    match: Match,
-    title_font: pygame.font.Font,
-    small_font: pygame.font.Font,
-) -> None:
-    overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 140))
-    surf.blit(overlay, (0, 0))
-    if match.winner is not None:
-        if match.vs_cpu and match.winner == 0:
-            label = "あなたの芋虫の勝ち！"
-        elif match.vs_cpu and match.winner == 1:
-            label = f"{CPU_LABEL}の勝ち！"
-        else:
-            label = f"P{match.winner + 1}芋虫の勝ち！"
-        main = title_font.render(label, True, (255, 220, 80))
-    else:
-        main = title_font.render("引き分け", True, (255, 220, 80))
-    surf.blit(main, main.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 36)))
-    score = small_font.render(f"{match.scores[0]}  -  {match.scores[1]}", True, (200, 210, 230))
-    surf.blit(score, score.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 4)))
-    sub = small_font.render("Space: もう一度    Esc: タイトルへ", True, (200, 210, 230))
-    surf.blit(sub, sub.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 36)))
 
 
 def toggle_fullscreen(screen: pygame.Surface, fullscreen: bool) -> tuple[pygame.Surface, bool]:
@@ -275,6 +173,12 @@ def draw_announce(surf: pygame.Surface, match: Match, font: pygame.font.Font) ->
         surf.blit(t, t.get_rect(center=(SCREEN_W // 2, TABLE_Y + 40)))
 
 
+def apply_cpu_difficulty(match: Match, cpu_ai: CPUAI) -> None:
+    key = CPU_DIFFICULTY_ORDER[match.cpu_diff_index]
+    cpu_ai.set_difficulty(key)
+    cpu_ai.reset()
+
+
 def main() -> None:
     pygame.init()
     pygame.display.set_icon(make_window_icon())
@@ -283,7 +187,8 @@ def main() -> None:
     init_sprites()
     clock = pygame.time.Clock()
 
-    title_font = pygame.font.SysFont("meiryo", 42, bold=True)
+    title_font = pygame.font.SysFont("meiryo", 52, bold=True)
+    body_font = pygame.font.SysFont("meiryo", 20)
     big_font = pygame.font.SysFont("meiryo", 96, bold=True)
     hud_font = pygame.font.SysFont("meiryo", 32, bold=True)
     small_font = pygame.font.SysFont("meiryo", 16)
@@ -300,8 +205,6 @@ def main() -> None:
     if audio is not None:
         audio.play_title_bgm()
     cpu_ai = CPUAI(DEFAULT_CPU_DIFFICULTY)
-    title_vs_cpu = False
-    title_cpu_difficulty = DEFAULT_CPU_DIFFICULTY
     title_show_help = False
     running = True
     start_time = time.perf_counter()
@@ -324,6 +227,12 @@ def main() -> None:
                             title_show_help = False
                         else:
                             running = False
+                    elif match.state == GameState.CPU_DIFF:
+                        match.reset_match()
+                        title_show_help = False
+                    elif match.state == GameState.TIPS:
+                        match.enter_countdown()
+                        start_time = time.perf_counter()
                     elif match.state == GameState.PAUSE:
                         match.back_to_title()
                         title_show_help = False
@@ -337,46 +246,58 @@ def main() -> None:
                         title_show_help = not title_show_help
                 elif event.key == pygame.K_f:
                     screen, fullscreen = toggle_fullscreen(screen, fullscreen)
-                elif event.key in (pygame.K_1, pygame.K_KP1):
+                elif event.key in (pygame.K_UP, pygame.K_w):
                     if match.state == GameState.TITLE:
-                        title_vs_cpu = True
-                elif event.key in (pygame.K_2, pygame.K_KP2):
+                        match.title_menu_index = (match.title_menu_index - 1) % 3
+                elif event.key in (pygame.K_DOWN, pygame.K_s):
                     if match.state == GameState.TITLE:
-                        title_vs_cpu = False
+                        match.title_menu_index = (match.title_menu_index + 1) % 3
+                elif event.key in (pygame.K_a, pygame.K_LEFT):
+                    if match.state == GameState.CPU_DIFF:
+                        match.cpu_diff_index = (match.cpu_diff_index - 1) % 3
+                elif event.key in (pygame.K_d, pygame.K_RIGHT):
+                    if match.state == GameState.CPU_DIFF:
+                        match.cpu_diff_index = (match.cpu_diff_index + 1) % 3
                 elif event.key in (pygame.K_3, pygame.K_KP3):
-                    if match.state == GameState.TITLE and title_vs_cpu:
-                        title_cpu_difficulty = "easy"
-                        cpu_ai.set_difficulty("easy")
+                    if match.state == GameState.CPU_DIFF:
+                        match.cpu_diff_index = 0
                 elif event.key in (pygame.K_4, pygame.K_KP4):
-                    if match.state == GameState.TITLE and title_vs_cpu:
-                        title_cpu_difficulty = "normal"
-                        cpu_ai.set_difficulty("normal")
+                    if match.state == GameState.CPU_DIFF:
+                        match.cpu_diff_index = 1
                 elif event.key in (pygame.K_5, pygame.K_KP5):
-                    if match.state == GameState.TITLE and title_vs_cpu:
-                        title_cpu_difficulty = "hard"
-                        cpu_ai.set_difficulty("hard")
+                    if match.state == GameState.CPU_DIFF:
+                        match.cpu_diff_index = 2
                 elif event.key == pygame.K_m:
                     if audio is not None:
                         bgm_muted = audio.toggle_bgm_mute()
                 elif event.key == pygame.K_SPACE:
                     if match.state == GameState.TITLE:
-                        match.start_from_title(vs_cpu=title_vs_cpu)
-                        if title_vs_cpu:
-                            cpu_ai.set_difficulty(title_cpu_difficulty)
-                            cpu_ai.reset()
-                        start_time = time.perf_counter()
-                        title_show_help = False
+                        if match.title_menu_index == 0:
+                            match.begin_from_menu(vs_cpu=True)
+                            title_show_help = False
+                        elif match.title_menu_index == 1:
+                            match.begin_from_menu(vs_cpu=False)
+                            title_show_help = False
+                        else:
+                            running = False
+                    elif match.state == GameState.CPU_DIFF:
+                        apply_cpu_difficulty(match, cpu_ai)
+                        match.start_fade_to_tips()
+                    elif match.state == GameState.TIPS:
+                        tips = tips_for_match(match.vs_cpu)
+                        if match.tips_index + 1 >= len(tips):
+                            match.enter_countdown()
+                            start_time = time.perf_counter()
+                        else:
+                            match.tips_index += 1
                     elif match.state == GameState.RESULT:
-                        match.start_from_title(vs_cpu=title_vs_cpu)
-                        if title_vs_cpu:
-                            cpu_ai.set_difficulty(title_cpu_difficulty)
-                            cpu_ai.reset()
+                        match.start_rematch(match.vs_cpu)
                         start_time = time.perf_counter()
                 elif event.key == pygame.K_p:
                     if match.state in (GameState.PLAYING, GameState.COUNTDOWN, GameState.PAUSE):
                         match.toggle_pause()
 
-        if match.state != GameState.PAUSE:
+        if match.state not in (GameState.PAUSE, GameState.TITLE, GameState.CPU_DIFF, GameState.TIPS):
             ai = cpu_ai if match.vs_cpu else None
             match.handle_input(keys, dt, now, cpu_ai=ai)
             match.update(dt, now)
@@ -388,41 +309,63 @@ def main() -> None:
             elif match.state != GameState.PAUSE and bgm_paused:
                 audio.resume_bgm()
                 bgm_paused = False
-            elif match.state != GameState.PAUSE:
+            else:
                 audio.set_bgm_for_state(match.state.name)
 
-        screen.fill(BG_COLOR)
-        draw_table(screen)
-
-        for owner in (0, 1):
-            player_fences = [f for f in match.fences if f.owner == owner]
-            draw_player_fences(screen, player_fences, now, CATERPILLAR_BODY_RADIUS)
-        for puck in match.pucks:
-            puck.draw(screen, now)
-        for paddle in match.paddles:
-            paddle.draw(screen, now)
-        if match.state != GameState.TITLE:
+        if match.state in ARENA_STATES:
+            screen.fill(BG_COLOR)
+            draw_table(screen)
+            for owner in (0, 1):
+                player_fences = [f for f in match.fences if f.owner == owner]
+                draw_player_fences(screen, player_fences, now, CATERPILLAR_BODY_RADIUS)
+            for puck in match.pucks:
+                puck.draw(screen, now)
+            draw_breach_sparks(screen, match.breach_sparks)
+            for paddle in match.paddles:
+                paddle.draw(screen, now)
             draw_hud(screen, match, hud_font, small_font, now, bgm_muted=bgm_muted)
             draw_announce(screen, match, announce_font)
             if match.goal_fx is not None:
                 draw_goal_celebration(screen, match.goal_fx, announce_font)
 
         if match.state == GameState.TITLE:
-            draw_title(
+            draw_title_screen(
                 screen,
                 title_font,
+                body_font,
                 small_font,
-                title_vs_cpu,
-                title_cpu_difficulty,
-                bgm_muted,
-                title_show_help,
+                menu_index=match.title_menu_index,
+                show_help=title_show_help,
+                now=now,
+            )
+        elif match.state == GameState.CPU_DIFF:
+            draw_cpu_difficulty_screen(
+                screen,
+                title_font,
+                body_font,
+                small_font,
+                selected_index=match.cpu_diff_index,
+            )
+        elif match.state == GameState.FADE:
+            draw_fade_screen(screen, match.fade_progress)
+        elif match.state == GameState.TIPS:
+            tips = tips_for_match(match.vs_cpu)
+            draw_tips_screen(
+                screen,
+                title_font,
+                body_font,
+                small_font,
+                tip_index=match.tips_index,
+                tip_count=len(tips),
+                tip_text=tips[match.tips_index],
+                is_last=(match.tips_index + 1 >= len(tips)),
             )
         elif match.state == GameState.COUNTDOWN:
             draw_countdown(screen, match, big_font)
         elif match.state == GameState.PAUSE:
             draw_pause(screen, hud_font, small_font)
         elif match.state == GameState.RESULT:
-            draw_result(screen, match, title_font, small_font)
+            draw_result_screen(screen, match, title_font, body_font, small_font, now=now)
 
         pygame.display.flip()
 
