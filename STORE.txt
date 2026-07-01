@@ -4,8 +4,10 @@
 
 ## Controls
 
-- P1芋虫: WASD + Shift
+- P1芋虫: WASD + Shift（CPU対戦時は Shift 左右どちらでも）
 - P2芋虫: Arrow keys + Shift
-- Title: 1=CPU芋虫, 2=2芋虫対戦, Space=start, H=help
+- Title: ↑↓ 選択, Space 決定, H=help, Esc=終了
+- CPU難易度: A/D 選択, Space 決定
+- バトル前: 暗転 → TIPS → カウントダウン
 
 Made with Python + pygame-ce.

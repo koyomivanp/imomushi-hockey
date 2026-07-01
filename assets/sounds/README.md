@@ -7,6 +7,7 @@
 | `bgm_title.mp3` / `.ogg` / `.wav` | タイトル BGM |
 | `bgm_battle.mp3` / `.ogg` / `.wav` | 対戦 BGM |
 | `wall_bounce.wav` | 壁反射 SE |
+| `fence_breach.wav` | 体節貫通 SE |
 | `goal.wav` | ゴール SE |
 | `countdown.wav` | カウントダウン SE |
 | `start.wav` | 試合開始 SE |
