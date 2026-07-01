@@ -5,3 +5,5 @@ dist/
 *.spec
 .venv/
 venv/
+dev/out/
+_pdf_page*.png
