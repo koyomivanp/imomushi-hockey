@@ -41,6 +41,20 @@ def _make_tone(freq: float, duration: float, volume: float = 0.35) -> pygame.mix
     return pygame.mixer.Sound(buffer=buf)
 
 
+def _make_swoosh(duration: float = 0.11, volume: float = 0.32) -> pygame.mixer.Sound:
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        env = math.exp(-t * 22.0) * (1.0 - t / duration)
+        freq = 920.0 - 520.0 * (t / duration)
+        v = int(max_amp * env * math.sin(2 * math.pi * freq * t))
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
 def _load_or_tone(name: str, freq: float, duration: float) -> pygame.mixer.Sound:
     for ext in (".wav", ".ogg", ".mp3"):
         path = SOUNDS_DIR / f"{name}{ext}"
@@ -50,6 +64,17 @@ def _load_or_tone(name: str, freq: float, duration: float) -> pygame.mixer.Sound
             except pygame.error:
                 pass
     return _make_tone(freq, duration)
+
+
+def _load_or_swoosh(name: str) -> pygame.mixer.Sound:
+    for ext in (".wav", ".ogg", ".mp3"):
+        path = SOUNDS_DIR / f"{name}{ext}"
+        if path.is_file():
+            try:
+                return pygame.mixer.Sound(str(path))
+            except pygame.error:
+                pass
+    return _make_swoosh()
 
 
 def _find_track(names: tuple[str, ...], extensions: tuple[str, ...] = (".mp3", ".ogg", ".wav")) -> Path | None:
@@ -71,10 +96,13 @@ class SoundManager:
         self._goal = _load_or_tone("goal", 660, 0.35)
         self._countdown = _load_or_tone("countdown", 880, 0.06)
         self._start = _load_or_tone("start", 990, 0.12)
+        self._fence_breach = _load_or_swoosh("fence_breach")
         self._last_bounce_at = 0.0
         self._last_trail_at = 0.0
+        self._last_breach_at = 0.0
         self._bounce_cooldown = 0.04
         self._trail_cooldown = 0.045
+        self._breach_cooldown = 0.06
         self._trail_pitch = 0.0
         self._title_path = _find_track(("bgm_title", "bgm", "music"))
         self._battle_path = _find_track(("bgm_battle", "battle_bgm", "bgm_fight"))
@@ -119,7 +147,7 @@ class SoundManager:
         self.play_title_bgm()
 
     def set_bgm_for_state(self, state_name: str) -> None:
-        if state_name == "TITLE":
+        if state_name == "TITLE" or state_name in ("CPU_DIFF", "FADE", "TIPS"):
             if self._current_mode != BGMMode.TITLE:
                 self.play_title_bgm()
         elif state_name in ("COUNTDOWN", "PLAYING", "RESULT"):
@@ -184,6 +212,13 @@ class SoundManager:
         base = 210.0 if self._trail_pitch < 0.5 else 255.0
         tone = _make_tone(base, 0.035, 0.16)
         self._play(tone, 0.42)
+
+    def play_fence_breach(self, now: float) -> None:
+        """体節貫通時のシュッという音"""
+        if now - self._last_breach_at < self._breach_cooldown:
+            return
+        self._last_breach_at = now
+        self._play(self._fence_breach, 0.72)
 
     def play_goal(self) -> None:
         self._play(self._goal, 0.9)

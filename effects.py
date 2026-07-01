@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 import pygame
 
 from caterpillar_art import LEAF_BODY, LEAF_EDGE
-from constants import P1_NEON, P2_NEON
+from constants import P1_NEON, P2_NEON, PUCK_NEON_HEAT
+from visuals import draw_neon_line
 
 
 @dataclass
@@ -111,3 +112,61 @@ def draw_goal_celebration(surf: pygame.Surface, fx: GoalCelebration, font: pygam
     sub = font.render(f"+{fx.points}", True, (255, 255, 255))
     sub_rect = sub.get_rect(center=(cx, cy + 6))
     surf.blit(sub, sub_rect)
+
+
+@dataclass
+class BreachSpark:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    life: float
+    max_life: float
+
+
+def spawn_breach_sparks(x: float, y: float, vx: float, vy: float) -> list[BreachSpark]:
+    """体節貫通時の火花"""
+    speed = math.hypot(vx, vy)
+    if speed > 1e-6:
+        ux, uy = vx / speed, vy / speed
+    else:
+        ux, uy = 1.0, 0.0
+    px, py = -uy, ux
+    sparks: list[BreachSpark] = []
+    for _ in range(7):
+        spread = random.uniform(-0.55, 0.55)
+        spd = random.uniform(120.0, 280.0)
+        sparks.append(BreachSpark(
+            x=x + random.uniform(-4.0, 4.0),
+            y=y + random.uniform(-4.0, 4.0),
+            vx=ux * spd + px * spd * spread,
+            vy=uy * spd + py * spd * spread,
+            life=random.uniform(0.12, 0.22),
+            max_life=0.22,
+        ))
+    return sparks
+
+
+def update_breach_sparks(sparks: list[BreachSpark], dt: float) -> list[BreachSpark]:
+    alive: list[BreachSpark] = []
+    for s in sparks:
+        s.life -= dt
+        if s.life <= 0.0:
+            continue
+        s.x += s.vx * dt
+        s.y += s.vy * dt
+        s.vx *= 0.92
+        s.vy *= 0.92
+        alive.append(s)
+    return alive
+
+
+def draw_breach_sparks(surf: pygame.Surface, sparks: list[BreachSpark]) -> None:
+    for s in sparks:
+        fade = max(0.0, min(1.0, s.life / s.max_life))
+        if fade <= 0.02:
+            continue
+        ex = int(s.x - s.vx * 0.04)
+        ey = int(s.y - s.vy * 0.04)
+        color = tuple(int(c * fade) for c in PUCK_NEON_HEAT)
+        draw_neon_line(surf, (int(s.x), int(s.y)), (ex, ey), color, fade=fade)

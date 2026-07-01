@@ -7,6 +7,8 @@ import pygame
 
 from constants import (
     COUNTDOWN_START,
+    FADE_DURATION,
+    FENCE_BREACH_FLASH_DURATION,
     FENCE_HALF_WIDTH,
     FENCE_MIN_LENGTH,
     GOAL_RESET_DELAY,
@@ -23,7 +25,14 @@ from constants import (
     WIN_SCORE,
 )
 from entities import Fence, Paddle, Puck, spawn_center_puck, table_rect
-from effects import GoalCelebration, spawn_goal_celebration, update_goal_celebration
+from effects import (
+    BreachSpark,
+    GoalCelebration,
+    spawn_breach_sparks,
+    spawn_goal_celebration,
+    update_breach_sparks,
+    update_goal_celebration,
+)
 from physics import (
     clamp_paddle_to_table,
     resolve_paddle_paddle,
@@ -36,6 +45,9 @@ from physics import (
 
 class GameState(Enum):
     TITLE = auto()
+    CPU_DIFF = auto()
+    FADE = auto()
+    TIPS = auto()
     COUNTDOWN = auto()
     PLAYING = auto()
     RESULT = auto()
@@ -47,7 +59,7 @@ class Match:
         self.audio = audio
         self.reset_match()
 
-    def reset_match(self) -> None:
+    def _init_paddles(self) -> None:
         rect = table_rect()
         self.paddles = [
             Paddle(player=0, x=rect.left + rect.width * 0.2, y=rect.centery, last_dir=(1.0, 0.0), face_heading=0.0, face_heading_ready=True, prev_x=rect.left + rect.width * 0.2, prev_y=rect.centery),
@@ -56,6 +68,9 @@ class Match:
         for paddle in self.paddles:
             paddle.trail_x = paddle.x
             paddle.trail_y = paddle.y
+
+    def reset_match(self) -> None:
+        self._init_paddles()
         self.pucks: list[Puck] = []
         self.fences: list[Fence] = []
         self.scores = [0, 0]
@@ -71,15 +86,46 @@ class Match:
         self.vs_cpu = False
         self._pre_pause_state: GameState | None = None
         self.goal_fx: GoalCelebration | None = None
+        self.breach_sparks: list[BreachSpark] = []
+        self.title_menu_index = 0
+        self.cpu_diff_index = 1
+        self.tips_index = 0
+        self.fade_progress = 0.0
 
-    def start_from_title(self, vs_cpu: bool = False) -> None:
-        self.reset_match()
+    def begin_from_menu(self, vs_cpu: bool) -> None:
+        """タイトルメニューから試合準備へ"""
+        self._init_paddles()
+        self.pucks = []
+        self.fences = []
+        self.scores = [0, 0]
         self.vs_cpu = vs_cpu
+        self.winner = None
+        self.announce = ""
+        self.announce_timer = 0.0
+        self.pucks_frozen = True
+        self.goal_reset_timer = 0.0
+        self.goal_fx = None
+        self.breach_sparks = []
+        self.tips_index = 0
+        self.fade_progress = 0.0
+        if vs_cpu:
+            self.state = GameState.CPU_DIFF
+        else:
+            self.state = GameState.FADE
+
+    def start_fade_to_tips(self) -> None:
+        self.state = GameState.FADE
+        self.fade_progress = 0.0
+
+    def enter_countdown(self) -> None:
         self.state = GameState.COUNTDOWN
         self.countdown = COUNTDOWN_START
         self.countdown_timer = 1.0
         self.pucks = [spawn_center_puck()]
         self.pucks_frozen = True
+
+    def start_rematch(self, vs_cpu: bool) -> None:
+        self.begin_from_menu(vs_cpu)
 
     def handle_input(
         self,
@@ -89,6 +135,8 @@ class Match:
         cpu_ai: "CPUAI | None" = None,
     ) -> None:
         if self.state == GameState.TITLE:
+            return
+        if self.state in (GameState.CPU_DIFF, GameState.FADE, GameState.TIPS):
             return
         if self.state == GameState.RESULT:
             return
@@ -114,7 +162,12 @@ class Match:
                     length = math.hypot(dx, dy)
                     dx /= length
                     dy /= length
-                paddle.is_dashing = bool(dx or dy) and keys[dash_keys[i]]
+                if self.vs_cpu and i == 0:
+                    paddle.is_dashing = bool(dx or dy) and (
+                        keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+                    )
+                else:
+                    paddle.is_dashing = bool(dx or dy) and keys[dash_keys[i]]
 
             speed = paddle.speed(now, paddle.is_dashing)
             if dx or dy:
@@ -252,6 +305,17 @@ class Match:
     def update(self, dt: float, now: float) -> None:
         if self.state == GameState.TITLE:
             return
+        if self.state == GameState.CPU_DIFF:
+            return
+        if self.state == GameState.FADE:
+            self.fade_progress += dt / FADE_DURATION
+            if self.fade_progress >= 1.0:
+                self.fade_progress = 1.0
+                self.state = GameState.TIPS
+                self.tips_index = 0
+            return
+        if self.state == GameState.TIPS:
+            return
         if self.state == GameState.PAUSE:
             return
         if self.state == GameState.RESULT:
@@ -277,6 +341,7 @@ class Match:
         # PLAYING
         self.match_time += dt
         self.goal_fx = update_goal_celebration(self.goal_fx, dt)
+        self.breach_sparks = update_breach_sparks(self.breach_sparks, dt)
         if self.announce_timer > 0:
             self.announce_timer -= dt
 
@@ -318,9 +383,17 @@ class Match:
                 if puck.carried_by >= 0:
                     continue
                 for fence in self.fences:
-                    if resolve_puck_fence(puck, fence, now):
+                    hit, breached = resolve_puck_fence(puck, fence, now)
+                    if hit:
                         fences_to_remove.append(fence)
-                        if self.audio is not None:
+                        if breached:
+                            puck.breach_flash_until = now + FENCE_BREACH_FLASH_DURATION
+                            self.breach_sparks.extend(
+                                spawn_breach_sparks(puck.x, puck.y, puck.vx, puck.vy),
+                            )
+                            if self.audio is not None:
+                                self.audio.play_fence_breach(now)
+                        elif self.audio is not None:
                             self.audio.play_wall_bounce(puck.wall_bounces, now)
                             self.audio.play_rally_milestone(puck.wall_bounces)
             seen: set[int] = set()
@@ -388,6 +461,7 @@ class Match:
                 puck.grind_paddle = -1
                 puck.grind_escape_x = 0.0
                 puck.dash_breach_until = 0.0
+                puck.breach_flash_until = 0.0
                 puck.prev_x = puck.x
                 puck.prev_y = puck.y
 

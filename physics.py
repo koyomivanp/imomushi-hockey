@@ -763,7 +763,7 @@ def _apply_rally_escalation(puck: Puck) -> None:
     puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
 
 
-def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> bool:
+def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> tuple[bool, bool]:
     hw = fence.half_width if fence.half_width > 0 else FENCE_HALF_WIDTH
     breach = _should_breach_fence(puck, fence, now)
     boost = FENCE_BREACH_BOOST if breach else FENCE_BOOST
@@ -775,4 +775,4 @@ def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> bool:
             puck.wall_bounces += 1
         else:
             _apply_rally_escalation(puck)
-    return hit
+    return hit, hit and breach

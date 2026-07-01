@@ -8,6 +8,7 @@ import pygame
 
 from constants import (
     CATERPILLAR_BODY_RADIUS,
+    FENCE_BREACH_FLASH_DURATION,
     GOAL_WIDTH_RATIO,
     P1_NEON,
     P2_NEON,
@@ -18,6 +19,7 @@ from constants import (
     PUCK_COLOR,
     PUCK_MAX_SPEED,
     PUCK_MIN_SPEED,
+    PUCK_NEON_HEAT,
     PUCK_RADIUS,
     TABLE_MARGIN_X,
     TABLE_W,
@@ -26,6 +28,7 @@ from constants import (
     TRAIL_FADE_START_RATIO,
     TRAIL_WALL_MIN_BRIGHTNESS,
 )
+from visuals import draw_neon_disc
 from caterpillar_art import (
     FACE_TURN_SPEED,
     draw_head_circle,
@@ -88,6 +91,7 @@ class Puck:
     grind_paddle: int = -1
     grind_escape_x: float = 0.0
     dash_breach_until: float = 0.0
+    breach_flash_until: float = 0.0
     prev_x: float = 0.0
     prev_y: float = 0.0
 
@@ -100,6 +104,12 @@ class Puck:
         return PUCK_COLOR
 
     def draw(self, surf: pygame.Surface, now: float = 0.0) -> None:
+        if now < self.breach_flash_until:
+            remain = self.breach_flash_until - now
+            fade = remain / FENCE_BREACH_FLASH_DURATION
+            pulse = 0.5 + 0.5 * math.sin(now * 32.0)
+            glow_r = int(self.radius * (1.35 + 0.25 * pulse))
+            draw_neon_disc(surf, int(self.x), int(self.y), glow_r, PUCK_NEON_HEAT, fade=fade, pulse=pulse)
         if not draw_leaf_sprite(surf, self.x, self.y, self.radius, now * 2.4):
             draw_leaf_puck(surf, self.x, self.y, self.radius, now)
 
