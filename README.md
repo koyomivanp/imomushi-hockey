@@ -7,6 +7,11 @@
 - **Shift + 移動**でダッシュ（体節は出ない・既存の壁をすり抜ける）
 - **体節貫通** — ダッシュで葉っぱを押し出した直後だけ、勢いを保って体節を抜ける
 
+## ポートフォリオ
+
+- 作品ページ: [koyomivanp.github.io/imomushi-hockey/](https://koyomivanp.github.io/imomushi-hockey/)
+- リポジトリ: [github.com/koyomivanp/imomushi-hockey](https://github.com/koyomivanp/imomushi-hockey)
+
 ## 必要環境
 
 - Python 3.10 以上（推奨 3.11+）
@@ -78,6 +83,8 @@ python dev/render_screens.py
 ```
 
 `dev/out/` にタイトル・難易度・TIPS・リザルトの画像が保存されます。芋虫のスタンプ重なりやロゴ被りも自動検証します。
+
+タイトル芋虫の見た目を変えたときは `caterpillar_art.py` 先頭付近の **タイトル芋虫シーン整備メモ** と `_title_worm_bezier` の座標を確認し、`python dev/render_screens.py` で再出力してください。
 
 ## Windows 用 exe のビルド
 

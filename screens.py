@@ -3,45 +3,52 @@
 from __future__ import annotations
 
 import math
+import random
 from typing import Literal
 
 import pygame
 
 from constants import (
     CPU_LABEL,
+    LOGO_FILL,
     MENU_BG,
     MENU_BORDER,
     MENU_CARD,
     MENU_CARD_BORDER,
-    MENU_PRIMARY,
-    MENU_PRIMARY_FILL,
     MENU_PRIMARY_GLOW,
-    MENU_SELECT,
     MENU_TEXT,
     MENU_TEXT_DIM,
     MENU_TITLE_GLOW,
-    P1_LABEL,
-    P2_LABEL,
     SCREEN_H,
     SCREEN_W,
     TIPS_BG,
     TIPS_COMMON,
     TIPS_CPU_CONTROLS,
     TIPS_TWO_PLAYER_CONTROLS,
-    TITLE_CONTENT_W,
-    TITLE_MENU_MARGIN,
+    TITLE_MENU_H,
+    TITLE_MENU_GAP,
+    TITLE_MENU_TOP,
     TITLE_MENU_W,
 )
 from ai import CPU_DIFFICULTY_ORDER, DIFFICULTIES
-from caterpillar_art import draw_title_leaf_scene
+from arena_assets import draw_forest_atmosphere, draw_menu_backdrop, has_rich_backdrop
+from caterpillar_art import draw_title_leaf_scene, update_title_demo
+from title_typography import (
+    TitleFonts,
+    blit_catch_copy,
+    blit_logo_center,
+    render_catch_copy,
+    render_tilted_logo,
+    render_ui_outlined,
+)
+from result_flow import ResultPhase, draw_result_dim_overlay, ease_out_back
 
 MenuRole = Literal["primary", "normal", "quit"]
 
-TITLE_LOGO_LEFT = 44
-TITLE_MENU_X = SCREEN_W - TITLE_MENU_W - TITLE_MENU_MARGIN
-TITLE_MENU_H = 50
-TITLE_MENU_GAP = 14
-TITLE_MENU_TOP = (SCREEN_H - (TITLE_MENU_H * 3 + TITLE_MENU_GAP * 2)) // 2
+TITLE_MENU_X = (SCREEN_W - TITLE_MENU_W) // 2
+_MOSS_HI = (72, 118, 78)
+_MOSS_LO = (48, 88, 52)
+_BARK = (58, 38, 24)
 
 
 def _lerp_color(
@@ -51,6 +58,10 @@ def _lerp_color(
 ) -> tuple[int, int, int]:
     t = max(0.0, min(1.0, t))
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+def _clamp01(t: float) -> float:
+    return max(0.0, min(1.0, t))
 
 
 def _draw_round_rect(
@@ -74,6 +85,104 @@ def _draw_glow_rect(surf: pygame.Surface, rect: pygame.Rect, color: tuple[int, i
     surf.blit(glow, (rect.x - 8, rect.y - 8))
 
 
+def _moss_speckles(surf: pygame.Surface, rect: pygame.Rect, seed: int, count: int = 8) -> None:
+    rng = random.Random(seed)
+    layer = pygame.Surface(rect.size, pygame.SRCALPHA)
+    for _ in range(count):
+        mx = rng.randint(6, max(7, rect.width - 6))
+        my = rng.randint(4, max(5, rect.height - 4))
+        col = _MOSS_HI if rng.random() > 0.4 else _MOSS_LO
+        pygame.draw.circle(layer, (*col, rng.randint(38, 78)), (mx, my), rng.randint(2, 4))
+    surf.blit(layer, rect.topleft)
+
+
+def _draw_organic_menu_card(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    border_color: tuple[int, int, int] | None = None,
+    glow: tuple[int, int, int] | None = None,
+    glow_alpha: int = 0,
+    seed: int = 0,
+) -> None:
+    """暗い有機パネル（看板 PNG なし — メニュー／リザルト用）"""
+    if glow is not None and glow_alpha > 0:
+        _draw_glow_rect(surf, rect, glow, glow_alpha)
+    _draw_round_rect(surf, rect, MENU_CARD, radius=14)
+    inner = rect.inflate(-6, -6)
+    pygame.draw.rect(surf, (18, 32, 22), inner, border_radius=12)
+    _moss_speckles(surf, inner, seed or rect.x * 17 + rect.y, count=6)
+    pygame.draw.rect(surf, border_color or MENU_CARD_BORDER, rect, 2, border_radius=14)
+
+
+def _draw_selection_glow(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    strength: float,
+    now: float,
+    color: tuple[int, int, int] = MENU_PRIMARY_GLOW,
+) -> None:
+    if strength <= 0.03:
+        return
+    pulse = 0.55 + 0.45 * math.sin(now * 5.2)
+    for expand, alpha_mult in ((10, 0.38), (20, 0.22), (32, 0.12)):
+        glow = pygame.Surface((rect.width + expand * 2, rect.height + expand * 2), pygame.SRCALPHA)
+        inner = pygame.Rect(expand, expand, rect.width, rect.height)
+        alpha = int((72 + 48 * pulse) * strength * alpha_mult)
+        pygame.draw.rect(glow, (*color, alpha), inner, border_radius=14)
+        surf.blit(glow, (rect.x - expand, rect.y - expand))
+
+
+def _draw_organic_menu_button(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    label: str,
+    font: pygame.font.Font,
+    *,
+    selected: bool = False,
+    sel_strength: float | None = None,
+    now: float = 0.0,
+) -> None:
+    s = _clamp01(sel_strength if sel_strength is not None else (1.0 if selected else 0.0))
+    pulse = 0.5 + 0.5 * math.sin(now * 5.0)
+    scale = 1.0 + 0.07 * s * (0.82 + 0.18 * pulse)
+    draw_rect = rect.copy()
+    if s > 0.02:
+        grow_w = int(rect.width * (scale - 1.0))
+        grow_h = int(rect.height * (scale - 1.0))
+        draw_rect.inflate_ip(grow_w, grow_h)
+        draw_rect.center = rect.center
+
+    _draw_selection_glow(surf, draw_rect, strength=s, now=now)
+
+    fill = _lerp_color((28, 44, 30), (42, 58, 44), s)
+    border_col = _lerp_color(MENU_CARD_BORDER, MENU_BORDER, s)
+    border_w = max(1, int(1 + s * 2.5))
+    pygame.draw.rect(surf, fill, draw_rect, border_radius=12)
+    pygame.draw.rect(surf, border_col, draw_rect, border_w, border_radius=12)
+
+    if s > 0.12:
+        bar_w = max(3, int(3 + 3 * s))
+        bar_h = max(8, draw_rect.height - 16)
+        bar = pygame.Rect(draw_rect.x + 7, draw_rect.centery - bar_h // 2, bar_w, bar_h)
+        bar_col = _lerp_color(MENU_BORDER, MENU_TITLE_GLOW, 0.35 + 0.65 * s * pulse)
+        pygame.draw.rect(surf, bar_col, bar, border_radius=3)
+        shine = pygame.Surface((bar_w, bar_h), pygame.SRCALPHA)
+        pygame.draw.rect(shine, (255, 255, 255, int(28 * s * pulse)), shine.get_rect(), border_radius=3)
+        surf.blit(shine, bar.topleft)
+
+    text_color = _lerp_color(MENU_TEXT_DIM, LOGO_FILL, s)
+    if s > 0.55:
+        text = render_ui_outlined(label, font, text_color, outline=_BARK, outline_px=2)
+    else:
+        text = font.render(label, True, text_color)
+    if s < 1.0:
+        text = text.copy()
+        text.set_alpha(int(180 + 75 * s))
+    surf.blit(text, text.get_rect(center=draw_rect.center))
+
+
 def _draw_title_menu_button(
     surf: pygame.Surface,
     rect: pygame.Rect,
@@ -81,112 +190,49 @@ def _draw_title_menu_button(
     font: pygame.font.Font,
     *,
     selected: bool,
+    sel_strength: float | None = None,
     role: MenuRole,
     now: float,
 ) -> None:
-    if role == "quit":
-        if selected:
-            pygame.draw.rect(surf, (38, 58, 42), rect, 1, border_radius=8)
-            text_color = MENU_TEXT_DIM
-        else:
-            text_color = (72, 88, 68)
-        text = font.render(label, True, text_color)
-        surf.blit(text, text.get_rect(center=rect.center))
+    _ = role
+    _draw_organic_menu_button(
+        surf, rect, label, font,
+        selected=selected, sel_strength=sel_strength, now=now,
+    )
+
+
+def _draw_title_logo_center(surf: pygame.Surface, fonts: TitleFonts, now: float) -> pygame.Rect:
+    logo, line1_anchor = render_tilted_logo("芋虫", "ホッケー", fonts, now=now)
+    logo_rect = blit_logo_center(surf, logo)
+    catch = render_catch_copy(fonts)
+    blit_catch_copy(surf, catch, line1_anchor)
+    return logo_rect
+
+
+def _draw_title_dapple_light(surf: pygame.Surface, now: float) -> None:
+    """タイトル背景 — 木漏れ日の斑点（PNG 未配置時のみ）"""
+    if has_rich_backdrop():
         return
-
-    if role == "primary":
-        pulse = 0.85 + 0.15 * math.sin(now * 2.2)
-        fill = MENU_PRIMARY_FILL if not selected else tuple(
-            int(MENU_PRIMARY_FILL[i] + (MENU_PRIMARY[i] - MENU_PRIMARY_FILL[i]) * 0.55) for i in range(3)
-        )
-        border_c = MENU_PRIMARY if selected else MENU_BORDER
-        if selected:
-            glow_a = int(55 + 35 * pulse)
-            _draw_glow_rect(surf, rect, MENU_PRIMARY_GLOW, glow_a)
-        _draw_round_rect(surf, rect, fill, radius=10, border=2, border_color=border_c)
-        text_color = MENU_TEXT
-    else:
-        if selected:
-            _draw_glow_rect(surf, rect, MENU_BORDER, 28)
-            _draw_round_rect(surf, rect, MENU_SELECT, radius=10, border=2, border_color=MENU_BORDER)
-            text_color = MENU_TEXT
-        else:
-            pygame.draw.rect(surf, (42, 62, 46), rect, 1, border_radius=10)
-            text_color = MENU_TEXT_DIM
-
-    text = font.render(label, True, text_color)
-    surf.blit(text, text.get_rect(center=rect.center))
-
-
-def _draw_forest_atmosphere(surf: pygame.Surface, now: float) -> None:
-    vignette = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-    for i in range(6):
-        alpha = int(28 + i * 10)
-        margin = i * 28
-        pygame.draw.rect(
-            vignette, (4, 10, 6, alpha),
-            pygame.Rect(margin, margin, SCREEN_W - margin * 2, SCREEN_H - margin * 2),
-            width=24,
-        )
-    surf.blit(vignette, (0, 0))
-
-    firefly_pts = (
-        (200, 260), (320, 300), (360, 400), (180, 420), (300, 460), (240, 340),
+    layer = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    spots = (
+        (180, 280, 38, 22), (620, 320, 32, 18), (400, 380, 48, 14),
+        (260, 420, 28, 16), (540, 400, 36, 12),
     )
-    for i, (fx, fy) in enumerate(firefly_pts):
-        glow = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(now * 1.8 + i * 1.1))
-        if glow < 0.45:
-            continue
-        c = (int(168 * glow), int(210 * glow), int(98 * glow))
-        pygame.draw.circle(surf, c, (fx, fy), 2)
+    for i, (sx, sy, sr, base_a) in enumerate(spots):
+        pulse = 0.7 + 0.3 * math.sin(now * 0.6 + i * 1.4)
+        alpha = int(base_a * pulse)
+        pygame.draw.circle(layer, (118, 168, 102, alpha), (sx, sy), sr)
+    surf.blit(layer, (0, 0))
 
-
-def _draw_title_logo_left(surf: pygame.Surface, font: pygame.font.Font, now: float) -> None:
-    """左上 — 2行ロゴ"""
-    x = TITLE_LOGO_LEFT
-    y0 = 52
-    pulse = 0.88 + 0.12 * math.sin(now * 1.4)
-    glow_c = tuple(int(c * pulse) for c in MENU_TITLE_GLOW)
-    shadow_c = (6, 12, 8)
-    line1, line2 = "芋虫", "ホッケー"
-
-    base_px = font.get_height()
-    logo_fonts = (
-        font,
-        pygame.font.SysFont("meiryo", int(base_px * 1.12), bold=True),
-    )
-
-    for dy, text, font_idx in ((0, line1, 0), (52, line2, 1)):
-        cy = y0 + dy
-        big = logo_fonts[font_idx]
-        for dx, offy, color in ((2, 3, shadow_c), (0, 0, glow_c), (0, 0, MENU_TEXT)):
-            t = big.render(text, True, color)
-            surf.blit(t, (x + dx, cy + offy))
-
-    line_y = y0 + 108
-    pygame.draw.line(surf, glow_c, (x, line_y), (x + 120, line_y), 2)
-
-
-def _draw_panel_divider(surf: pygame.Surface) -> None:
-    """左イラストと右メニューの境"""
-    x = TITLE_CONTENT_W - 8
-    fade = pygame.Surface((28, SCREEN_H), pygame.SRCALPHA)
-    for i in range(28):
-        alpha = int(22 * (1.0 - i / 27))
-        pygame.draw.line(fade, (60, 100, 68, alpha), (i, 0), (i, SCREEN_H))
-    surf.blit(fade, (x, 0))
-
-
-def _draw_right_menu_panel(surf: pygame.Surface) -> None:
-    """右パネル — ボタンが読みやすいよう薄い暗幕"""
-    panel = pygame.Surface((SCREEN_W - TITLE_CONTENT_W, SCREEN_H), pygame.SRCALPHA)
-    panel.fill((8, 16, 10, 72))
-    surf.blit(panel, (TITLE_CONTENT_W, 0))
 
 
 def tips_for_match(vs_cpu: bool) -> tuple[str, ...]:
-    last = TIPS_CPU_CONTROLS if vs_cpu else TIPS_TWO_PLAYER_CONTROLS
-    return TIPS_COMMON + (last,)
+    _ = vs_cpu
+    return TIPS_COMMON
+
+
+def pick_random_tip(vs_cpu: bool) -> str:
+    return random.choice(tips_for_match(vs_cpu))
 
 
 def draw_title_screen(
@@ -196,28 +242,37 @@ def draw_title_screen(
     small_font: pygame.font.Font,
     *,
     menu_index: int,
-    show_help: bool,
+    menu_sel_strengths: tuple[float, float, float] | None = None,
+    title_fonts: TitleFonts | None = None,
+    cpu_diff_index: int = 1,
     now: float = 0.0,
+    dt: float = 0.0,
 ) -> None:
-    surf.fill(MENU_BG)
-    _draw_forest_atmosphere(surf, now)
+    fonts = title_fonts
+    if fonts is None:
+        from title_typography import load_title_fonts
+        fonts = load_title_fonts()
+
+    draw_menu_backdrop(surf, now)
+    _draw_title_dapple_light(surf, now)
+    if dt > 0.0:
+        update_title_demo(dt, now)
     draw_title_leaf_scene(surf, now)
-    _draw_right_menu_panel(surf)
-    _draw_panel_divider(surf)
-    _draw_title_logo_left(surf, title_font, now)
+    _draw_title_logo_center(surf, fonts, now)
 
     labels = (f"vs {CPU_LABEL}", "2芋虫対戦", "終了")
-    roles: tuple[MenuRole, ...] = ("primary", "normal", "quit")
+    roles: tuple[MenuRole, ...] = ("normal", "normal", "normal")
     for i, (label, role) in enumerate(zip(labels, roles)):
         y = TITLE_MENU_TOP + i * (TITLE_MENU_H + TITLE_MENU_GAP)
         rect = pygame.Rect(TITLE_MENU_X, y, TITLE_MENU_W, TITLE_MENU_H)
+        strength = menu_sel_strengths[i] if menu_sel_strengths is not None else None
         _draw_title_menu_button(
-            surf, rect, label, body_font,
-            selected=(menu_index == i), role=role, now=now,
+            surf, rect, label, fonts.menu,
+            selected=(menu_index == i),
+            sel_strength=strength,
+            role=role,
+            now=now,
         )
-
-    if show_help:
-        draw_help_overlay(surf, title_font, small_font)
 
 
 def _draw_menu_button(
@@ -227,15 +282,11 @@ def _draw_menu_button(
     font: pygame.font.Font,
     *,
     selected: bool,
+    now: float = 0.0,
 ) -> None:
-    if selected:
-        _draw_round_rect(surf, rect, MENU_SELECT, radius=10, border=2, border_color=MENU_BORDER)
-        text_color = MENU_TEXT
-    else:
-        pygame.draw.rect(surf, (48, 72, 52), rect, 1, border_radius=10)
-        text_color = MENU_TEXT_DIM
-    text = font.render(label, True, text_color)
-    surf.blit(text, text.get_rect(center=rect.center))
+    _draw_organic_menu_button(
+        surf, rect, label, font, selected=selected, now=now,
+    )
 
 
 def draw_cpu_difficulty_screen(
@@ -245,28 +296,190 @@ def draw_cpu_difficulty_screen(
     small_font: pygame.font.Font,
     *,
     selected_index: int,
+    cpu_sel_strengths: tuple[float, float, float] | None = None,
+    now: float = 0.0,
+    title_fonts: TitleFonts | None = None,
+    morph_progress: float = 1.0,
 ) -> None:
-    surf.fill(TIPS_BG)
-    heading = title_font.render("CPUの強さ", True, MENU_TEXT)
-    surf.blit(heading, heading.get_rect(center=(400, 200)))
+    from cpu_diff_morph import draw_cpu_diff_morph
 
-    btn_w, btn_h, gap = 140, 52, 16
-    total_w = btn_w * 3 + gap * 2
-    start_x = 400 - total_w // 2
-    y = 268
-    for i, key in enumerate(CPU_DIFFICULTY_ORDER):
-        rect = pygame.Rect(start_x + i * (btn_w + gap), y, btn_w, btn_h)
-        _draw_menu_button(
-            surf, rect, DIFFICULTIES[key].label, body_font, selected=(i == selected_index),
-        )
+    fonts = title_fonts
+    if fonts is None:
+        from title_typography import load_title_fonts
+        fonts = load_title_fonts()
 
-    hint = small_font.render("A D で選択　Space 決定　Esc で戻る", True, MENU_TEXT_DIM)
-    surf.blit(hint, hint.get_rect(center=(400, 380)))
+    draw_menu_backdrop(surf, now)
+    _draw_title_dapple_light(surf, now)
+
+    fade = max(0.0, 1.0 - morph_progress * 1.6)
+    if fade > 0.02:
+        _draw_title_logo_center(surf, fonts, now)
+        if fade < 1.0:
+            veil = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            veil.fill((6, 14, 8, int(200 * (1.0 - fade))))
+            surf.blit(veil, (0, 0))
+
+    draw_cpu_diff_morph(
+        surf,
+        fonts,
+        selected_index=selected_index,
+        sel_strengths=cpu_sel_strengths,
+        progress=morph_progress,
+        now=now,
+    )
 
 
-def draw_fade_screen(surf: pygame.Surface, progress: float) -> None:
+def draw_fade_screen(surf: pygame.Surface, progress: float, now: float = 0.0) -> None:
+    if has_rich_backdrop():
+        draw_menu_backdrop(surf, now)
+        fade_top = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        fade_top.fill((*_lerp_color(MENU_BG, TIPS_BG, min(1.0, progress * 1.2)), int(72 * progress)))
+        surf.blit(fade_top, (0, 0))
+        return
+
     color = _lerp_color(MENU_BG, TIPS_BG, progress)
     surf.fill(color)
+    draw_forest_atmosphere(surf, now, battle=False)
+
+    veil = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    vignette_a = int(28 + 52 * progress)
+    for i in range(4):
+        margin = i * 32
+        alpha = vignette_a + i * 8
+        pygame.draw.rect(
+            veil, (4, 10, 6, alpha),
+            pygame.Rect(margin, margin, SCREEN_W - margin * 2, SCREEN_H - margin * 2),
+            width=18,
+        )
+    surf.blit(veil, (0, 0))
+
+    firefly_layer = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    for i in range(6):
+        fx = int(SCREEN_W * (0.15 + 0.7 * ((i * 0.17 + progress * 0.3) % 1.0)))
+        fy = int(SCREEN_H * (0.2 + 0.6 * ((i * 0.23 + now * 0.05) % 1.0)))
+        glow = 0.4 + 0.6 * (0.5 + 0.5 * math.sin(now * 2.0 + i * 1.7))
+        if glow < 0.5:
+            continue
+        c = (int(168 * glow), int(210 * glow), int(98 * glow), int(90 * (1.0 - progress * 0.5)))
+        pygame.draw.circle(firefly_layer, c, (fx, fy), 2)
+    surf.blit(firefly_layer, (0, 0))
+
+    fade_top = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    fade_top.fill((*_lerp_color(MENU_BG, TIPS_BG, min(1.0, progress * 1.2)), int(60 * progress)))
+    surf.blit(fade_top, (0, 0))
+
+
+def _tip_category(tip_text: str) -> str:
+    if tip_text in (TIPS_CPU_CONTROLS, TIPS_TWO_PLAYER_CONTROLS):
+        return "操作"
+    if tip_text == TIPS_COMMON[-1]:
+        return "テクニック"
+    return "ルール"
+
+
+def _wrap_text(text: str, font: pygame.font.Font, max_w: int) -> list[str]:
+    if font.size(text)[0] <= max_w:
+        return [text]
+    lines: list[str] = []
+    chunk = ""
+    for ch in text:
+        trial = chunk + ch
+        if font.size(trial)[0] > max_w:
+            if chunk:
+                lines.append(chunk)
+            chunk = ch
+        else:
+            chunk = trial
+    if chunk:
+        lines.append(chunk)
+    return lines
+
+
+def _draw_tips_subtitle_veil(surf: pygame.Surface, now: float) -> None:
+    """木漏れ日の字幕用 — 縁を落とし中央に柔らかい光"""
+    layer = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    for i in range(7):
+        margin = 10 + i * 26
+        alpha = 12 + i * 14
+        pygame.draw.rect(
+            layer, (2, 6, 4, alpha),
+            pygame.Rect(margin, margin, SCREEN_W - margin * 2, SCREEN_H - margin * 2),
+            width=22,
+        )
+
+    pulse = 0.82 + 0.18 * math.sin(now * 0.55)
+    cx, cy = SCREEN_W // 2, SCREEN_H // 2 - 12
+    for r in range(210, 0, -7):
+        t = 1.0 - r / 210.0
+        alpha = int((14 + 26 * t) * pulse)
+        pygame.draw.circle(layer, (92, 142, 82, alpha), (cx, cy), r)
+
+    spots = (
+        (280, 198, 52, 16), (520, 228, 44, 12), (360, 268, 64, 10),
+    )
+    for i, (sx, sy, sr, base_a) in enumerate(spots):
+        flicker = 0.65 + 0.35 * math.sin(now * 0.7 + i * 1.3)
+        pygame.draw.circle(
+            layer, (148, 198, 112, int(base_a * flicker)),
+            (sx, sy), sr,
+        )
+    surf.blit(layer, (0, 0))
+
+
+def _tips_enter_ease(tips_timer: float | None) -> tuple[float, int]:
+    """表示開始からの入場（0=開始直後, 1=完了）と alpha"""
+    if tips_timer is None:
+        return 1.0, 255
+    from constants import TIPS_DISPLAY_DURATION
+
+    elapsed = max(0.0, TIPS_DISPLAY_DURATION - tips_timer)
+    t = min(1.0, elapsed / 0.45)
+    ease = 1.0 - (1.0 - t) ** 3
+    return ease, int(255 * ease)
+
+
+def draw_tips_overlay(
+    surf: pygame.Surface,
+    body_font: pygame.font.Font,
+    small_font: pygame.font.Font,
+    *,
+    tip_text: str,
+    tips_alpha: float,
+) -> None:
+    """蝶の暗幕の上に TIPS テキストだけ重ねる"""
+    if tips_alpha <= 0.0:
+        return
+
+    alpha = int(255 * max(0.0, min(1.0, tips_alpha)))
+    y_shift = int((1.0 - tips_alpha) * 12)
+
+    category = _tip_category(tip_text)
+    prefix = small_font.render(f"{category} —", True, MENU_TITLE_GLOW)
+    prefix.set_alpha(alpha)
+
+    lines = _wrap_text(tip_text, body_font, 520)
+    line_surfs: list[pygame.Surface] = []
+    for line in lines:
+        outlined = render_ui_outlined(
+            line, body_font, LOGO_FILL, outline=_BARK, outline_px=2,
+        )
+        outlined.set_alpha(alpha)
+        line_surfs.append(outlined)
+
+    line_gap = 10
+    block_h = prefix.get_height() + 18
+    for s in line_surfs:
+        block_h += s.get_height() + line_gap
+    if line_surfs:
+        block_h -= line_gap
+
+    top_y = SCREEN_H // 2 - block_h // 2 + y_shift
+    surf.blit(prefix, prefix.get_rect(midtop=(SCREEN_W // 2, top_y)))
+
+    y = top_y + prefix.get_height() + 18
+    for s in line_surfs:
+        surf.blit(s, s.get_rect(midtop=(SCREEN_W // 2, y)))
+        y += s.get_height() + line_gap
 
 
 def draw_tips_screen(
@@ -275,42 +488,46 @@ def draw_tips_screen(
     body_font: pygame.font.Font,
     small_font: pygame.font.Font,
     *,
-    tip_index: int,
-    tip_count: int,
     tip_text: str,
-    is_last: bool,
+    now: float = 0.0,
+    tip_index: int = 0,
+    tip_count: int = 5,
+    tips_timer: float | None = None,
 ) -> None:
-    surf.fill(TIPS_BG)
-    label = small_font.render("ヒント", True, MENU_TEXT_DIM)
-    surf.blit(label, label.get_rect(center=(400, 200)))
+    _ = title_font, tip_index, tip_count
+    draw_menu_backdrop(surf, now)
+    _draw_tips_subtitle_veil(surf, now)
 
-    words = tip_text
-    lines: list[str] = []
-    max_w = 520
-    if body_font.size(words)[0] <= max_w:
-        lines = [words]
-    else:
-        chunk = ""
-        for ch in words:
-            trial = chunk + ch
-            if body_font.size(trial)[0] > max_w:
-                if chunk:
-                    lines.append(chunk)
-                chunk = ch
-            else:
-                chunk = trial
-        if chunk:
-            lines.append(chunk)
+    ease, alpha = _tips_enter_ease(tips_timer)
+    y_shift = int((1.0 - ease) * 16)
 
-    y = 248 - (len(lines) * 14)
+    category = _tip_category(tip_text)
+    prefix = small_font.render(f"{category} —", True, MENU_TITLE_GLOW)
+    prefix.set_alpha(alpha)
+
+    lines = _wrap_text(tip_text, body_font, 520)
+    line_surfs: list[pygame.Surface] = []
     for line in lines:
-        t = body_font.render(line, True, MENU_TEXT)
-        surf.blit(t, t.get_rect(center=(400, y)))
-        y += 28
+        outlined = render_ui_outlined(
+            line, body_font, LOGO_FILL, outline=_BARK, outline_px=2,
+        )
+        outlined.set_alpha(alpha)
+        line_surfs.append(outlined)
 
-    footer = "Space で開始" if is_last else f"Space で次へ（{tip_index + 1} / {tip_count}）"
-    foot = small_font.render(footer, True, MENU_TEXT_DIM)
-    surf.blit(foot, foot.get_rect(center=(400, 400)))
+    line_gap = 10
+    block_h = prefix.get_height() + 18
+    for s in line_surfs:
+        block_h += s.get_height() + line_gap
+    if line_surfs:
+        block_h -= line_gap
+
+    top_y = SCREEN_H // 2 - block_h // 2 + y_shift
+    surf.blit(prefix, prefix.get_rect(midtop=(SCREEN_W // 2, top_y)))
+
+    y = top_y + prefix.get_height() + 18
+    for s in line_surfs:
+        surf.blit(s, s.get_rect(midtop=(SCREEN_W // 2, y)))
+        y += s.get_height() + line_gap
 
 
 def result_headline(match) -> str:
@@ -333,82 +550,89 @@ def draw_result_screen(
     now: float = 0.0,
 ) -> None:
     """対戦コートの上に森テーマのリザルトカードを重ねる"""
-    overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-    overlay.fill((8, 16, 10, 175))
-    surf.blit(overlay, (0, 0))
+    result_phase = getattr(match, "result_phase", ResultPhase.HOLD)
+    dimness = getattr(match, "result_dimness", 1.0)
+    card_alpha = getattr(match, "result_card_alpha", 1.0)
 
-    mins = int(match.match_time) // 60
-    secs = int(match.match_time) % 60
-    headline = result_headline(match)
+    if result_phase == ResultPhase.CELEBRATE and dimness <= 0.01 and card_alpha <= 0.01:
+        return
+
+    if dimness > 0.01:
+        draw_result_dim_overlay(surf, dimness)
+
+    if card_alpha <= 0.01:
+        return
+
     if match.winner is None:
         celebrate = False
     elif match.vs_cpu:
         celebrate = match.winner == 0
     else:
         celebrate = True
+
+    if celebrate and match.winner is not None:
+        warm = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        warm.fill((118, 168, 102, int(28 * card_alpha)))
+        surf.blit(warm, (0, 0))
+
+    overlay_tint = (22, 40, 18, int(195 * card_alpha)) if celebrate else (6, 12, 8, int(210 * card_alpha))
+    overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    overlay.fill(overlay_tint)
+    surf.blit(overlay, (0, 0))
+    draw_forest_atmosphere(surf, now, battle=True, include_fireflies=celebrate)
+
+    mins = int(match.match_time) // 60
+    secs = int(match.match_time) % 60
+    headline = result_headline(match)
     pulse = 0.88 + 0.12 * math.sin(now * 2.0)
 
-    card_w, card_h = 520, 236
+    card_w, card_h = 540, 250
+    slide = int((1.0 - ease_out_back(card_alpha)) * 28)
     card = pygame.Rect(
         SCREEN_W // 2 - card_w // 2,
-        SCREEN_H // 2 - card_h // 2,
+        SCREEN_H // 2 - card_h // 2 + slide,
         card_w,
         card_h,
     )
-    if celebrate and match.winner is not None:
-        glow_a = int(42 + 28 * pulse)
-        _draw_glow_rect(surf, card, MENU_PRIMARY_GLOW, glow_a)
-    _draw_round_rect(surf, card, MENU_CARD, radius=14, border=2, border_color=MENU_CARD_BORDER)
+    border_col = MENU_BORDER if celebrate and match.winner is not None else MENU_CARD_BORDER
+    glow_a = int((48 + 32 * pulse) * card_alpha) if celebrate and match.winner is not None else 0
+    _draw_organic_menu_card(
+        surf,
+        card,
+        border_color=border_col,
+        glow=MENU_PRIMARY_GLOW if celebrate and match.winner is not None else None,
+        glow_alpha=glow_a,
+        seed=card.centerx,
+    )
 
     if match.winner is None:
         title_color = MENU_TEXT_DIM
+        title_font_use = title_font
     elif celebrate:
         title_color = tuple(int(c * pulse) for c in MENU_TITLE_GLOW)
+        title_font_use = title_font
     else:
-        title_color = MENU_TEXT_DIM
+        title_color = (88, 108, 82)
+        title_font_use = title_font
 
-    title = title_font.render(headline, True, title_color)
-    surf.blit(title, title.get_rect(center=(SCREEN_W // 2, card.centery - 52)))
+    title = render_ui_outlined(
+        headline, title_font_use, title_color, outline=_BARK,
+        outline_px=4 if celebrate else 3,
+    )
+    title.set_alpha(int(255 * card_alpha))
+    title_y = card.centery - 52 if celebrate else card.centery - 48
+    surf.blit(title, title.get_rect(center=(SCREEN_W // 2, title_y)))
 
-    score = body_font.render(f"{match.scores[0]}  -  {match.scores[1]}", True, MENU_TEXT)
-    surf.blit(score, score.get_rect(center=(SCREEN_W // 2, card.centery - 8)))
+    s0, s1 = match.scores
+    score_line = body_font.render(f"{s0}  -  {s1}", True, MENU_TEXT if celebrate else MENU_TEXT_DIM)
+    score_line.set_alpha(int(255 * card_alpha))
+    surf.blit(score_line, score_line.get_rect(center=(SCREEN_W // 2, card.centery - 4)))
 
-    time_line = small_font.render(f"試合時間 {mins:02d}:{secs:02d}", True, MENU_TEXT_DIM)
+    time_col = MENU_TEXT if celebrate else MENU_TEXT_DIM
+    time_line = small_font.render(f"試合時間 {mins:02d}:{secs:02d}", True, time_col)
+    time_line.set_alpha(int(255 * card_alpha))
     surf.blit(time_line, time_line.get_rect(center=(SCREEN_W // 2, card.centery + 28)))
 
-    hint = small_font.render("Space: もう一度    Esc: タイトルへ", True, MENU_TEXT_DIM)
-    surf.blit(hint, hint.get_rect(center=(SCREEN_W // 2, card.centery + 58)))
-
-
-def draw_help_overlay(surf: pygame.Surface, font: pygame.font.Font, small: pygame.font.Font) -> None:
-    overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 210))
-    surf.blit(overlay, (0, 0))
-
-    title = font.render("操作説明", True, MENU_TEXT)
-    surf.blit(title, title.get_rect(center=(SCREEN_W // 2, 72)))
-
-    lines = [
-        "【ルール】先取3点で勝ち。葉っぱを相手ゴールへ。",
-        "【体節】這うと体節が壁になる。古い体節から消える。",
-        "【ダッシュ】Shift+移動で高速移動。体節は出ず、壁をすり抜ける。",
-        "【貫通】ダッシュで葉っぱを打った直後だけ、体節を勢いよく抜ける。",
-        "",
-        f"{P1_LABEL}（左）: WASD 移動 / Shift+移動でダッシュ",
-        f"{P2_LABEL}（右）: 矢印キー / Shift+移動でダッシュ",
-        f"CPU対戦: WASD 移動 / Shift は左右どちらでも",
-        "",
-        "タイトル: ↑↓ 選択  Space 決定  H 説明",
-        "対戦中: P/Esc ポーズ  M BGM  F 全画面",
-        "",
-        "H または Esc で閉じる",
-    ]
-    y = 118
-    for line in lines:
-        color = MENU_TEXT_DIM if line else (0, 0, 0, 0)
-        if line.startswith("【貫通】"):
-            color = MENU_TITLE_GLOW
-        if line:
-            t = small.render(line, True, color)
-            surf.blit(t, t.get_rect(center=(SCREEN_W // 2, y)))
-        y += 22
+    hint = small_font.render("Space: もう一度    Esc: タイトル", True, MENU_TEXT_DIM)
+    hint.set_alpha(int(200 * card_alpha))
+    surf.blit(hint, hint.get_rect(center=(SCREEN_W // 2, card.centery + 62)))

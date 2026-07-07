@@ -6,4 +6,6 @@ dist/
 .venv/
 venv/
 dev/out/
+.cursor/
+.summer/
 _pdf_page*.png

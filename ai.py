@@ -6,7 +6,7 @@ import math
 import random
 from dataclasses import dataclass
 
-from entities import Fence, Paddle, Puck, goal_bounds, table_rect
+from entities import Fence, Paddle, Puck, arena_frame_rect, goal_bounds, playable_rect
 
 CPU_PLAYER = 1
 
@@ -82,8 +82,8 @@ class CPUAI:
             self._difficulty_key = key
 
     def reset(self) -> None:
-        rect = table_rect()
-        self._target = (rect.right - rect.width * 0.2, rect.centery)
+        play = playable_rect()
+        self._target = (play.right - play.width * 0.2, play.centery)
         self._next_update = 0.0
         self._dash_cooldown_until = 0.0
 
@@ -212,7 +212,8 @@ class CPUAI:
         )
 
     def _most_threatening_puck(self, pucks: list[Puck], player: int) -> tuple[Puck | None, float]:
-        rect = table_rect()
+        play = playable_rect()
+        frame = arena_frame_rect()
         goal_top, goal_bottom = goal_bounds()
         best: Puck | None = None
         best_score = -1e9
@@ -220,10 +221,10 @@ class CPUAI:
         for puck in pucks:
             if player == 1:
                 toward_goal = puck.vx
-                dist_to_goal = rect.right - puck.x
+                dist_to_goal = frame.right - puck.x
             else:
                 toward_goal = -puck.vx
-                dist_to_goal = puck.x - rect.left
+                dist_to_goal = puck.x - frame.left
 
             if toward_goal <= 0:
                 toward_goal = 5.0
@@ -243,13 +244,14 @@ class CPUAI:
         return best, best_score
 
     def _fence_defend_target(self, paddle: Paddle, puck: Puck, now: float) -> tuple[float, float]:
-        rect = table_rect()
+        play = playable_rect()
+        frame = arena_frame_rect()
         r = paddle.radius(now)
         goal_top, goal_bottom = goal_bounds()
         lead = self.difficulty.intercept_lead
 
         if abs(puck.vx) > 40:
-            t = max(0.0, (rect.right - puck.x) / max(puck.vx, 1.0))
+            t = max(0.0, (frame.right - puck.x) / max(puck.vx, 1.0))
             t = min(t, 1.0)
             intercept_x = puck.x + puck.vx * t * lead
             intercept_y = puck.y + puck.vy * t * lead
@@ -257,19 +259,19 @@ class CPUAI:
             intercept_x = puck.x + 55.0
             intercept_y = puck.y
 
-        target_x = max(rect.centerx, min(intercept_x + 55.0, rect.right - r - 8))
+        target_x = max(play.centerx, min(intercept_x + 55.0, play.right - r - 8))
         target_y = max(goal_top - 20, min(goal_bottom + 20, intercept_y))
         return self._jitter(target_x, target_y)
 
     def _fence_attack_target(self, paddle: Paddle, puck: Puck, now: float) -> tuple[float, float]:
-        rect = table_rect()
+        play = playable_rect()
         r = paddle.radius(now)
         goal_top, goal_bottom = goal_bounds()
         lead = self.difficulty.intercept_lead
 
         ahead_x = puck.x + puck.vx * (0.22 + lead * 0.2)
         ahead_y = puck.y + puck.vy * (0.22 + lead * 0.2)
-        target_x = max(rect.centerx + 20, min(ahead_x + 35, rect.right - r - 6))
+        target_x = max(play.centerx + 20, min(ahead_x + 35, play.right - r - 6))
         target_y = max(goal_top - 16, min(goal_bottom + 16, ahead_y))
         return self._jitter(target_x, target_y)
 

@@ -24,22 +24,6 @@ def draw_neon_line(
         pygame.draw.line(surf, c, p1, p2, width)
 
 
-def draw_neon_capsule(
-    surf: pygame.Surface,
-    p1: tuple[int, int],
-    p2: tuple[int, int],
-    color: tuple[int, int, int],
-    fade: float = 1.0,
-    pulse: float = 0.0,
-    cap_radius: int = 8,
-) -> None:
-    """線分＋両端の半円（カプセル形）。壁の当たり判定と見た目を揃える。"""
-    draw_neon_line(surf, p1, p2, color, fade=fade, pulse=pulse)
-    r = max(2, cap_radius)
-    draw_neon_disc(surf, p1[0], p1[1], r, color, fade=fade, pulse=pulse)
-    draw_neon_disc(surf, p2[0], p2[1], r, color, fade=fade, pulse=pulse)
-
-
 def draw_neon_disc(
     surf: pygame.Surface,
     x: int,

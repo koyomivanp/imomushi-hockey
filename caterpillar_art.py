@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+import random
+from dataclasses import dataclass, field
 
 import pygame
 
 from constants import CATERPILLAR_BODY_RADIUS
 from visuals import draw_neon_disc
-
-if TYPE_CHECKING:
-    from entities import Fence
 
 P1_BODY = (52, 185, 102)
 P1_BELLY = (130, 235, 155)
@@ -30,10 +28,6 @@ STAMP_SPACING_RATIO = 0.11
 STAMP_MIN_SPACING_PX = 1.5
 CORNER_TRIM_RATIO = 0.72
 FACE_TURN_SPEED = 14.0
-
-
-def caterpillar_radius() -> float:
-    return CATERPILLAR_BODY_RADIUS
 
 
 def _palette(player: int) -> tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]:
@@ -64,122 +58,6 @@ def _circle_stamp(
 ) -> None:
     r = max(3, int(radius))
     pygame.draw.circle(surf, body, (int(cx), int(cy)), r)
-
-
-def _gel_circle_stamp(
-    surf: pygame.Surface,
-    cx: float,
-    cy: float,
-    radius: float,
-    player: int,
-    fade: float,
-    now: float,
-    pulse_phase: float,
-) -> None:
-    """艶・グラデ・プルプル感のある体節スタンプ（タイトル枠用）"""
-    body, belly, outline = _palette(player)
-    f = max(0.0, min(1.0, fade))
-    pulse = 1.0 + 0.07 * math.sin(now * 3.1 + pulse_phase)
-    wobble_x = math.sin(now * 2.4 + pulse_phase * 1.3) * radius * 0.035
-    wobble_y = math.cos(now * 2.7 + pulse_phase * 0.9) * radius * 0.03
-    px = cx + wobble_x
-    py = cy + wobble_y
-    r = max(3.0, radius * pulse)
-    ir, iyr = int(px), int(py)
-    ri = max(3, int(r))
-
-    shadow = _tint(tuple(max(0, c - 48) for c in body), f * 0.65)
-    pygame.draw.circle(surf, shadow, (ir + 2, iyr + 3), ri)
-
-    base = _tint(body, f * 0.92)
-    pygame.draw.circle(surf, base, (ir, iyr), ri)
-
-    belly_c = _tint(belly, f * 0.88)
-    pygame.draw.circle(surf, belly_c, (ir - max(1, ri // 4), iyr - max(1, ri // 3)), max(2, int(ri * 0.62)))
-
-    spec = (
-        min(255, belly[0] + 55),
-        min(255, belly[1] + 60),
-        min(255, belly[2] + 45),
-    )
-    pygame.draw.circle(
-        surf, _tint(spec, f * 0.75),
-        (ir - max(1, ri // 3), iyr - max(1, ri // 2)),
-        max(1, int(ri * 0.22)),
-    )
-
-    rim = _tint(outline, f * 0.55)
-    pygame.draw.circle(surf, rim, (ir, iyr), ri, max(1, ri // 8))
-
-
-def _stamp_line_gel(
-    surf: pygame.Surface,
-    x1: float,
-    y1: float,
-    x2: float,
-    y2: float,
-    radius: float,
-    player: int,
-    now: float,
-    phase_base: float,
-) -> None:
-    dx, dy = x2 - x1, y2 - y1
-    length = math.hypot(dx, dy)
-    if length < 0.5:
-        return
-    ux, uy = dx / length, dy / length
-    extend = radius * 0.92
-    sx = x1 - ux * extend
-    sy = y1 - uy * extend
-    ex = x2 + ux * extend
-    ey = y2 + uy * extend
-    span = math.hypot(ex - sx, ey - sy)
-    spacing = max(2.0, radius * 0.07)
-    steps = max(1, int(span / spacing))
-    for i in range(steps + 1):
-        t = i / steps
-        px = sx + (ex - sx) * t
-        py = sy + (ey - sy) * t
-        _gel_circle_stamp(surf, px, py, radius, player, 1.0, now, phase_base + i * 0.38)
-
-
-def _gel_corner_cap(
-    surf: pygame.Surface,
-    cx: float,
-    cy: float,
-    radius: float,
-    player: int,
-    now: float,
-    phase: float,
-) -> None:
-    _gel_circle_stamp(surf, cx, cy, radius * 1.14, player, 1.0, now, phase)
-
-
-def _draw_gel_head(
-    surf: pygame.Surface,
-    x: float,
-    y: float,
-    radius: float,
-    player: int,
-    heading: float,
-    now: float,
-) -> None:
-    """タイトル用 — 艶のある頭"""
-    body, belly, outline = _palette(player)
-    r = radius
-    pulse = 1.0 + 0.05 * math.sin(now * 2.6)
-    ri = max(4, int(r * pulse))
-    ix, iy = int(x), int(y)
-
-    pygame.draw.circle(surf, _tint(tuple(max(0, c - 40) for c in body), 0.6), (ix + 2, iy + 2), ri + 1)
-    pygame.draw.circle(surf, _tint(body, 0.95), (ix, iy), ri)
-    pygame.draw.circle(surf, _tint(belly, 0.85), (ix - ri // 4, iy - ri // 3), max(3, int(ri * 0.58)))
-    pygame.draw.circle(
-        surf, _tint((min(255, belly[0] + 50), min(255, belly[1] + 55), min(255, belly[2] + 40)), 0.7),
-        (ix - ri // 3, iy - ri // 2), max(2, ri // 5),
-    )
-    pygame.draw.circle(surf, _tint(outline, 0.5), (ix, iy), ri, max(1, ri // 7))
-    draw_sketch_face(surf, x, y, radius, heading, player)
 
 
 def _elongated_stamp(
@@ -328,27 +206,10 @@ def draw_stamp_path(
 ) -> None:
     """1区間を細長スタンプで埋める（スリザリオの連打）"""
     body, _belly, _outline = _palette(player)
-    c_body = _tint(body, fade)
     spacing = max(STAMP_MIN_SPACING_PX, radius * STAMP_SPACING_RATIO)
     points = [(x1, y1, fade), (x2, y2, fade)]
     for px, py, f in _rounded_path_samples(points, radius, spacing):
         _circle_stamp(surf, px, py, radius, _tint(body, f))
-
-
-def _stamp_along_polyline(
-    surf: pygame.Surface,
-    points: list[tuple[float, float, float]],
-    radius: float,
-    player: int,
-) -> None:
-    """折れ線を丸角化して円スタンプで高密度に埋める"""
-    if len(points) < 2:
-        return
-
-    body, _belly, _outline = _palette(player)
-    spacing = max(STAMP_MIN_SPACING_PX, radius * STAMP_SPACING_RATIO)
-    for px, py, fade in _rounded_path_samples(points, radius, spacing):
-        _circle_stamp(surf, px, py, radius, _tint(body, fade))
 
 
 def draw_smooth_tube(
@@ -364,23 +225,6 @@ def draw_smooth_tube(
     draw_stamp_path(surf, x1, y1, x2, y2, radius, player, fade=fade)
 
 
-def draw_connected_trail(
-    surf: pygame.Surface,
-    segments: list[tuple[float, float, float, float, float]],
-    radius: float,
-    player: int,
-) -> None:
-    """複数区間を1本の折れ線として高密度スタンプで描く"""
-    if not segments:
-        return
-    points: list[tuple[float, float, float]] = [
-        (segments[0][0], segments[0][1], segments[0][4]),
-    ]
-    for x1, y1, x2, y2, fade in segments:
-        points.append((x2, y2, fade))
-    _stamp_along_polyline(surf, points, radius, player)
-
-
 def fence_fade(fence: Fence, now: float, age_rank: float) -> float:
     from constants import TRAIL_FADE_START_RATIO, TRAIL_WALL_MIN_BRIGHTNESS
 
@@ -394,31 +238,6 @@ def fence_fade(fence: Fence, now: float, age_rank: float) -> float:
     age_rank = max(0.0, min(1.0, age_rank))
     age_brightness = TRAIL_WALL_MIN_BRIGHTNESS + (1.0 - TRAIL_WALL_MIN_BRIGHTNESS) * age_rank
     return expire_fade * age_brightness
-
-
-CHAIN_JOIN_TOLERANCE_RATIO = 0.55
-
-
-def _group_fence_chains(fences: list[Fence], body_radius: float) -> list[list[Fence]]:
-    """つながっている軌跡だけを1チェーンにまとめる（離れた区間を誤接続しない）"""
-    ordered = sorted(fences, key=lambda f: f.created_at)
-    tol = max(4.0, body_radius * CHAIN_JOIN_TOLERANCE_RATIO)
-    chains: list[list[Fence]] = []
-    current: list[Fence] = []
-    for fence in ordered:
-        if not current:
-            current.append(fence)
-            continue
-        prev = current[-1]
-        gap = math.hypot(fence.x1 - prev.x2, fence.y1 - prev.y2)
-        if gap <= tol:
-            current.append(fence)
-        else:
-            chains.append(current)
-            current = [fence]
-    if current:
-        chains.append(current)
-    return chains
 
 
 def draw_player_fences(
@@ -508,26 +327,6 @@ def draw_sketch_face(
     pygame.draw.lines(surf, c_ink, False, [left, mid, right], max(1, lw - 1))
 
 
-draw_simple_face = draw_sketch_face
-draw_topdown_face = draw_sketch_face
-
-
-def draw_worm_chain(
-    surf: pygame.Surface,
-    x1: float,
-    y1: float,
-    x2: float,
-    y2: float,
-    player: int,
-    fade: float,
-    body_radius: float,
-    *,
-    shade: float = 1.0,
-) -> None:
-    _ = shade
-    draw_stamp_path(surf, x1, y1, x2, y2, body_radius, player, fade=fade)
-
-
 def draw_body_stamp(
     surf: pygame.Surface,
     x: float,
@@ -541,39 +340,6 @@ def draw_body_stamp(
     _ = shade
     body, _belly, _outline = _palette(player)
     _elongated_stamp(surf, x, y, angle, radius, _tint(body, fade))
-
-
-def draw_caterpillar_segment(
-    surf: pygame.Surface,
-    x: float,
-    y: float,
-    radius: float,
-    player: int,
-    fade: float = 1.0,
-    pulse: float = 0.0,
-    segment_index: int = 0,
-    angle: float = 0.0,
-) -> None:
-    _ = pulse
-    _ = segment_index
-    draw_body_stamp(surf, x, y, angle, radius, player, fade=fade)
-
-
-def draw_segment_chain(
-    surf: pygame.Surface,
-    x1: float,
-    y1: float,
-    x2: float,
-    y2: float,
-    player: int,
-    fade: float,
-    now: float,
-    created_at: float,
-    body_radius: float,
-) -> None:
-    _ = now
-    _ = created_at
-    draw_stamp_path(surf, x1, y1, x2, y2, body_radius, player, fade=fade)
 
 
 def draw_caterpillar_head(
@@ -603,123 +369,334 @@ def draw_caterpillar_head(
     draw_sketch_face(surf, x, y, radius, heading, player)
 
 
-def _stamp_polyline_gel(
-    surf: pygame.Surface,
-    points: list[tuple[float, float]],
-    radius: float,
-    player: int,
-    now: float,
-    phase: float,
-    *,
-    body_fade: float = 1.0,
-) -> None:
-    if len(points) < 2:
-        return
-    poly = [(x, y, body_fade) for x, y in points]
-    spacing = max(2.0, radius * 0.07)
-    for i, (px, py, f) in enumerate(_rounded_path_samples(poly, radius, spacing)):
-        _gel_circle_stamp(surf, px, py, radius, player, f, now, phase + i * 0.38)
+# --- タイトル画面デモ走行 ---
+TITLE_DEMO_SPAWN_MIN = 3.0
+TITLE_DEMO_SPAWN_MAX = 5.0
+TITLE_DEMO_SPEED_MIN = 115.0
+TITLE_DEMO_SPEED_MAX = 175.0
+TITLE_DEMO_SPAWN_MARGIN = 48.0
+TITLE_DEMO_OFFSCREEN_MARGIN = 56.0
 
 
-def _head_heading_at_path_end(points: list[tuple[float, float]]) -> float:
-    if len(points) < 2:
-        return 0.0
-    return math.atan2(points[-1][1] - points[-2][1], points[-1][0] - points[-2][0])
-
-
-def _draw_title_worm_body(
-    surf: pygame.Surface,
-    points: list[tuple[float, float]],
-    player: int,
-    body_radius: float,
-) -> None:
-    """タイトル用 — 対戦と同じスタンプ連打の体"""
-    poly = [(x, y, 1.0) for x, y in points]
-    _stamp_along_polyline(surf, poly, body_radius, player)
-
-
-def _draw_title_worm_head(
-    surf: pygame.Surface,
-    points: list[tuple[float, float]],
-    player: int,
-    head_radius: float,
-    *,
-    wobble: float = 0.0,
-) -> None:
-    """進行方向の先端（パス終点）にバトル同様の頭"""
-    hx = points[-1][0] + wobble
-    hy = points[-1][1]
-    heading = _head_heading_at_path_end(points)
-    draw_head_circle(surf, hx, hy, head_radius, player)
-    draw_sketch_face(surf, hx, hy, head_radius, heading, player)
-
-
-def draw_title_leaf_scene(surf: pygame.Surface, now: float) -> None:
-    """左側 — 2頭の芋虫が葉っぱを囲む（タイトルロゴと被らない位置）"""
+def _title_scene_radii() -> tuple[float, float, float]:
     from constants import (
         CATERPILLAR_BODY_RADIUS,
-        SCREEN_H,
-        SCREEN_W,
-        TITLE_LEAF_X,
-        TITLE_LEAF_Y,
-        TITLE_SCENE_ARC_LIFT,
         TITLE_SCENE_BODY_SCALE,
-        TITLE_SCENE_SIDE_GAP,
-        TITLE_SCENE_SPAN,
+        TITLE_SCENE_HEAD_RADIUS_SCALE,
+        TITLE_SCENE_LEAF_RADIUS,
     )
 
-    body_r = CATERPILLAR_BODY_RADIUS * TITLE_SCENE_BODY_SCALE
-    head_r = body_r
-    lx, ly = TITLE_LEAF_X, TITLE_LEAF_Y
-    span = TITLE_SCENE_SPAN
-    arc_lift = TITLE_SCENE_ARC_LIFT
-    side = TITLE_SCENE_SIDE_GAP
+    body_r = CATERPILLAR_BODY_RADIUS * TITLE_SCENE_BODY_SCALE * 0.92
+    head_r = CATERPILLAR_BODY_RADIUS * TITLE_SCENE_BODY_SCALE * TITLE_SCENE_HEAD_RADIUS_SCALE
+    return body_r, head_r, TITLE_SCENE_LEAF_RADIUS
 
-    spotlight = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-    pygame.draw.ellipse(
-        spotlight, (36, 64, 42, 42),
-        pygame.Rect(int(lx - 175), int(ly - 200), 350, 340),
+
+def _draw_title_trail_chain(
+    surf: pygame.Surface,
+    segments: list,
+    now: float,
+    body_radius: float,
+) -> None:
+    """タイトル用 — 1本の折れ線として連続スタンプ（区間ごとの輪郭リング重複を避ける）"""
+    if not segments:
+        return
+    ordered = sorted(segments, key=lambda fence: fence.created_at)
+    count = len(ordered)
+    player = ordered[0].owner
+    body, _, _ = _palette(player)
+    moss_blend = (58, 98, 64)
+    spacing = max(STAMP_MIN_SPACING_PX, body_radius * STAMP_SPACING_RATIO)
+
+    points: list[tuple[float, float, float]] = []
+    for index, fence in enumerate(ordered):
+        rank = index / max(1, count - 1) if count > 1 else 1.0
+        fade = fence_fade(fence, now, rank)
+        if fade <= 0.04:
+            continue
+        if not points:
+            points.append((fence.x1, fence.y1, fade))
+        points.append((fence.x2, fence.y2, fade))
+
+    if len(points) < 2:
+        return
+
+    for px, py, fade in _rounded_path_samples(points, body_radius, spacing):
+        blended = tuple(int(body[i] * 0.88 + moss_blend[i] * 0.12) for i in range(3))
+        _circle_stamp(surf, px, py, body_radius, _tint(blended, fade))
+
+
+@dataclass
+class _DemoWorm:
+    player: int
+    x: float
+    y: float
+    vx: float
+    vy: float
+    trail_x: float
+    trail_y: float
+    trail_spawn_until: float
+    segments: list = field(default_factory=list)
+
+    @property
+    def heading(self) -> float:
+        return math.atan2(self.vy, self.vx)
+
+
+def sample_demo_worm_spawn(
+    rng: random.Random | None = None,
+) -> tuple[float, float, float, float, int]:
+    """デモ芋虫の出現パラメータ（x, y, vx, vy, player）"""
+    from constants import SCREEN_H, SCREEN_W
+
+    source = rng if rng is not None else random
+    body_r, _, _ = _title_scene_radii()
+    margin = TITLE_DEMO_SPAWN_MARGIN + body_r
+    edge = source.randint(0, 3)
+
+    if edge == 0:
+        x = -margin
+        y = source.uniform(margin, SCREEN_H - margin)
+    elif edge == 1:
+        x = SCREEN_W + margin
+        y = source.uniform(margin, SCREEN_H - margin)
+    elif edge == 2:
+        x = source.uniform(margin, SCREEN_W - margin)
+        y = -margin
+    else:
+        x = source.uniform(margin, SCREEN_W - margin)
+        y = SCREEN_H + margin
+
+    target_x = source.uniform(margin, SCREEN_W - margin)
+    target_y = source.uniform(margin, SCREEN_H - margin)
+    angle = math.atan2(target_y - y, target_x - x)
+    speed = source.uniform(TITLE_DEMO_SPEED_MIN, TITLE_DEMO_SPEED_MAX)
+    vx = math.cos(angle) * speed
+    vy = math.sin(angle) * speed
+    player = source.randint(0, 1)
+    return x, y, vx, vy, player
+
+
+def demo_path_crosses_screen(
+    x: float,
+    y: float,
+    vx: float,
+    vy: float,
+    *,
+    margin: float = 0.0,
+) -> bool:
+    """移動経路が画面内領域を横断するか（画面外に逃げる角度を除外する検証用）"""
+    from constants import SCREEN_H, SCREEN_W
+
+    left, top = margin, margin
+    right, bottom = SCREEN_W - margin, SCREEN_H - margin
+    if left <= x <= right and top <= y <= bottom:
+        return True
+
+    speed = math.hypot(vx, vy)
+    if speed < 1e-6:
+        return False
+
+    max_t = (max(SCREEN_W, SCREEN_H) + TITLE_DEMO_SPAWN_MARGIN * 4.0) / speed
+    steps = 96
+    prev_inside = left <= x <= right and top <= y <= bottom
+    for i in range(1, steps + 1):
+        t = max_t * i / steps
+        px = x + vx * t
+        py = y + vy * t
+        inside = left <= px <= right and top <= py <= bottom
+        if inside and not prev_inside:
+            return True
+        if inside:
+            return True
+        prev_inside = inside
+    return False
+
+
+class TitleDemoSystem:
+    """タイトル背景 — バトル同形式の短命軌跡（尻尾からフェード）"""
+
+    def __init__(self) -> None:
+        self.worms: list[_DemoWorm] = []
+        self.fading_trails: list[list] = []
+        self.spawn_timer = 0.0
+        self.next_spawn_delay = self._random_spawn_delay()
+        self._spawn_counts = [0, 0]
+        self._spawn_worm()
+
+    def reset(self) -> None:
+        self.worms.clear()
+        self.fading_trails.clear()
+        self.spawn_timer = 0.0
+        self.next_spawn_delay = self._random_spawn_delay()
+        self._spawn_counts = [0, 0]
+        self._spawn_worm()
+
+    @staticmethod
+    def _random_spawn_delay() -> float:
+        return random.uniform(TITLE_DEMO_SPAWN_MIN, TITLE_DEMO_SPAWN_MAX)
+
+    def _pick_balanced_player(self) -> int:
+        if self._spawn_counts[0] < self._spawn_counts[1]:
+            return 0
+        if self._spawn_counts[1] < self._spawn_counts[0]:
+            return 1
+        return random.choice((0, 1))
+
+    def _spawn_worm(self) -> None:
+        x, y, vx, vy, _ = sample_demo_worm_spawn()
+        player = self._pick_balanced_player()
+        self._spawn_counts[player] += 1
+        self.worms.append(_DemoWorm(player, x, y, vx, vy, x, y, 0.0))
+
+    def _add_trail_segment(
+        self,
+        worm: _DemoWorm,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        now: float,
+    ) -> None:
+        from constants import (
+            FENCE_HALF_WIDTH,
+            FENCE_MIN_LENGTH,
+            TITLE_DEMO_TRAIL_LIFETIME,
+            TITLE_DEMO_TRAIL_MAX_SEGMENTS,
+            TRAIL_SPAWN_COOLDOWN,
+        )
+        from entities import Fence
+
+        seg_len = math.hypot(x2 - x1, y2 - y1)
+        if seg_len < FENCE_MIN_LENGTH:
+            return
+        if now < worm.trail_spawn_until:
+            return
+        while len(worm.segments) >= TITLE_DEMO_TRAIL_MAX_SEGMENTS:
+            worm.segments.pop(0)
+        worm.segments.append(Fence(
+            owner=worm.player,
+            x1=x1,
+            y1=y1,
+            x2=x2,
+            y2=y2,
+            until=now + TITLE_DEMO_TRAIL_LIFETIME,
+            created_at=now,
+            half_width=FENCE_HALF_WIDTH,
+        ))
+        worm.trail_spawn_until = now + TRAIL_SPAWN_COOLDOWN
+
+    def _update_worm_trail(self, worm: _DemoWorm, now: float) -> None:
+        from constants import TRAIL_SEGMENT_INTERVAL
+
+        dx = worm.x - worm.trail_x
+        dy = worm.y - worm.trail_y
+        dist = math.hypot(dx, dy)
+        if dist < TRAIL_SEGMENT_INTERVAL:
+            return
+        self._add_trail_segment(worm, worm.trail_x, worm.trail_y, worm.x, worm.y, now)
+        worm.trail_x = worm.x
+        worm.trail_y = worm.y
+
+    @staticmethod
+    def _prune_segments(segments: list, now: float) -> list:
+        return [segment for segment in segments if segment.until > now]
+
+    @staticmethod
+    def _is_off_screen(worm: _DemoWorm, margin: float) -> bool:
+        from constants import SCREEN_H, SCREEN_W
+
+        return (
+            worm.x < -margin
+            or worm.x > SCREEN_W + margin
+            or worm.y < -margin
+            or worm.y > SCREEN_H + margin
+        )
+
+    def update(self, dt: float, now: float) -> None:
+        if dt <= 0.0:
+            return
+
+        self.spawn_timer += dt
+        if self.spawn_timer >= self.next_spawn_delay:
+            self.spawn_timer = 0.0
+            self.next_spawn_delay = self._random_spawn_delay()
+            self._spawn_worm()
+
+        body_r, _, _ = _title_scene_radii()
+        off_margin = TITLE_DEMO_OFFSCREEN_MARGIN + body_r
+        survivors: list[_DemoWorm] = []
+        for worm in self.worms:
+            worm.x += worm.vx * dt
+            worm.y += worm.vy * dt
+            self._update_worm_trail(worm, now)
+            worm.segments = self._prune_segments(worm.segments, now)
+            if self._is_off_screen(worm, off_margin):
+                if worm.segments:
+                    self.fading_trails.append(worm.segments)
+            else:
+                survivors.append(worm)
+        self.worms = survivors
+
+        self.fading_trails = [
+            chain for chain in (
+                self._prune_segments(trail, now) for trail in self.fading_trails
+            )
+            if chain
+        ]
+
+    def draw(self, surf: pygame.Surface, now: float = 0.0) -> None:
+        from constants import FENCE_HALF_WIDTH
+
+        _, head_r, _ = _title_scene_radii()
+        trail_r = FENCE_HALF_WIDTH
+
+        for trail in self.fading_trails:
+            _draw_title_trail_chain(surf, trail, now, trail_r)
+        for worm in self.worms:
+            _draw_title_trail_chain(surf, worm.segments, now, trail_r)
+            draw_head_circle(surf, worm.x, worm.y, head_r, worm.player)
+            draw_sketch_face(surf, worm.x, worm.y, head_r, worm.heading, worm.player)
+
+
+_title_demo_system: TitleDemoSystem | None = None
+
+
+def get_title_demo_system() -> TitleDemoSystem:
+    global _title_demo_system
+    if _title_demo_system is None:
+        _title_demo_system = TitleDemoSystem()
+    return _title_demo_system
+
+
+def reset_title_demo() -> None:
+    global _title_demo_system
+    if _title_demo_system is not None:
+        _title_demo_system.reset()
+    else:
+        _title_demo_system = TitleDemoSystem()
+
+
+def update_title_demo(dt: float, now: float) -> None:
+    get_title_demo_system().update(dt, now)
+
+
+def title_scene_bbox() -> tuple[float, float, float, float]:
+    """中央葉っぱのおおよその bbox（レイアウト検証用）"""
+    from constants import TITLE_LEAF_X, TITLE_LEAF_Y, TITLE_SCENE_LEAF_RADIUS
+
+    pad = 8.0
+    r = TITLE_SCENE_LEAF_RADIUS
+    return (
+        TITLE_LEAF_X - r - pad,
+        TITLE_LEAF_Y - r - pad,
+        TITLE_LEAF_X + r + pad,
+        TITLE_LEAF_Y + r + pad,
     )
-    surf.blit(spotlight, (0, 0))
-
-    pulse = 0.5 + 0.5 * math.sin(now * 1.6)
-    glow_r = int(38 + 5 * pulse)
-    pygame.draw.circle(surf, (24, 44, 28), (int(lx), int(ly)), glow_r + 6)
-    pygame.draw.circle(
-        surf,
-        (int(50 + 20 * pulse), int(90 + 30 * pulse), int(55 + 15 * pulse)),
-        (int(lx), int(ly)),
-        glow_r,
-    )
-
-    p1_pts = [
-        (lx - span, ly - side),
-        (lx - span * 0.4, ly - arc_lift),
-        (lx, ly - arc_lift - 18),
-        (lx + span * 0.4, ly - arc_lift),
-        (lx + span, ly - side),
-    ]
-    p2_pts = [
-        (lx + span, ly + side),
-        (lx + span * 0.4, ly + arc_lift),
-        (lx, ly + arc_lift + 18),
-        (lx - span * 0.4, ly + arc_lift),
-        (lx - span, ly + side),
-    ]
-
-    _draw_title_worm_body(surf, p1_pts, 0, body_r)
-    _draw_title_worm_body(surf, p2_pts, 1, body_r)
-
-    wob = math.sin(now * 1.4) * 0.6
-    _draw_title_worm_head(surf, p1_pts, 0, head_r, wobble=wob)
-    _draw_title_worm_head(surf, p2_pts, 1, head_r, wobble=-wob)
-
-    draw_leaf_puck(surf, lx, ly, 28.0, now)
 
 
-def draw_title_frame_caterpillars(surf: pygame.Surface, now: float) -> None:
-    """互換 — 葉っぱ囲みシーンへ"""
-    draw_title_leaf_scene(surf, now)
+def draw_title_leaf_scene(surf: pygame.Surface, now: float = 0.0) -> None:
+    """タイトル背景 — デモ走行の軌跡＋中央の葉っぱ＋走行中の芋虫"""
+    get_title_demo_system().draw(surf, now)
 
 
 def draw_leaf_puck(

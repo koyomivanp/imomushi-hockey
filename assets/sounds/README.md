@@ -12,4 +12,6 @@
 | `countdown.wav` | カウントダウン SE |
 | `start.wav` | 試合開始 SE |
 
-ファイルが無い場合はプログラム内で生成した簡易音が使われます。
+ファイルが無い場合はプログラム内で生成した森テーマの簡易音が使われます。
+
+MCP 不通時は `python dev/generate_sounds.py` で WAV を一括生成できます（`.summer/audio-bible.md` 参照）。

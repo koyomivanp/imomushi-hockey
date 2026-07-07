@@ -7,11 +7,13 @@ from dataclasses import dataclass, field
 import pygame
 
 from constants import (
-    CATERPILLAR_BODY_RADIUS,
+    ARENA_FRAME_ASSET_SIZE,
+    ARENA_FRAME_BORDER_PAD,
+    ARENA_FRAME_CORNER,
     FENCE_BREACH_FLASH_DURATION,
+    GOAL_SCORE_DEPTH,
     GOAL_WIDTH_RATIO,
-    P1_NEON,
-    P2_NEON,
+    MENU_TITLE_GLOW,
     PADDLE_DASH_SPEED,
     PADDLE_SPEED,
     PADDLE_WIDTH_RATIO,
@@ -21,20 +23,20 @@ from constants import (
     PUCK_MIN_SPEED,
     PUCK_NEON_HEAT,
     PUCK_RADIUS,
+    RALLY_GLOW_MIN_BOUNCES,
     TABLE_MARGIN_X,
     TABLE_W,
     TABLE_Y,
     TABLE_H,
-    TRAIL_FADE_START_RATIO,
-    TRAIL_WALL_MIN_BRIGHTNESS,
 )
 from visuals import draw_neon_disc
 from caterpillar_art import (
     FACE_TURN_SPEED,
+    P1_OUTLINE,
+    P2_OUTLINE,
     draw_head_circle,
     draw_leaf_puck,
     draw_sketch_face,
-    draw_smooth_tube,
     lerp_angle,
 )
 from sprites import draw_leaf_sprite
@@ -57,6 +59,36 @@ def table_rect() -> pygame.Rect:
     return pygame.Rect(TABLE_MARGIN_X, TABLE_Y, TABLE_W, TABLE_H)
 
 
+def arena_frame_rect() -> pygame.Rect:
+    """9-slice 枠の外周矩形"""
+    return table_rect().inflate(ARENA_FRAME_BORDER_PAD * 2, ARENA_FRAME_BORDER_PAD * 2)
+
+
+def arena_strip_width() -> int:
+    """枠の根・苔ストリップ幅（通行不可の茶色帯）"""
+    frame_rect = arena_frame_rect()
+    size = ARENA_FRAME_ASSET_SIZE
+    return min(
+        ARENA_FRAME_CORNER,
+        size // 2,
+        size // 2,
+        frame_rect.width // 2,
+        frame_rect.height // 2,
+    )
+
+
+def playable_rect() -> pygame.Rect:
+    """茶色枠の内側＝通行可能エリア"""
+    frame_rect = arena_frame_rect()
+    strip = arena_strip_width()
+    return pygame.Rect(
+        frame_rect.left + strip,
+        frame_rect.top + strip,
+        frame_rect.width - strip * 2,
+        frame_rect.height - strip * 2,
+    )
+
+
 def goal_bounds() -> tuple[float, float]:
     """ゴール開口（左右壁の中央）。返値は top, bottom"""
     rect = table_rect()
@@ -64,6 +96,12 @@ def goal_bounds() -> tuple[float, float]:
     top = rect.top + rect.height * (0.5 - half)
     bottom = rect.top + rect.height * (0.5 + half)
     return top, bottom
+
+
+def goal_score_bounds() -> tuple[float, float]:
+    """左・右の得点ライン x（パックがここを越えたら得点）"""
+    frame = arena_frame_rect()
+    return frame.left - GOAL_SCORE_DEPTH, frame.right + GOAL_SCORE_DEPTH
 
 
 def _heading_from_paddle(paddle: "Paddle") -> float:
@@ -110,6 +148,14 @@ class Puck:
             pulse = 0.5 + 0.5 * math.sin(now * 32.0)
             glow_r = int(self.radius * (1.35 + 0.25 * pulse))
             draw_neon_disc(surf, int(self.x), int(self.y), glow_r, PUCK_NEON_HEAT, fade=fade, pulse=pulse)
+        elif self.wall_bounces >= RALLY_GLOW_MIN_BOUNCES:
+            heat = min(1.0, (self.wall_bounces - RALLY_GLOW_MIN_BOUNCES + 1) * 0.18)
+            pulse = 0.5 + 0.5 * math.sin(now * 18.0)
+            glow_r = int(self.radius * (1.1 + 0.15 * heat * pulse))
+            draw_neon_disc(
+                surf, int(self.x), int(self.y), glow_r, PUCK_NEON_HEAT,
+                fade=0.15 + 0.25 * heat, pulse=pulse * heat,
+            )
         if not draw_leaf_sprite(surf, self.x, self.y, self.radius, now * 2.4):
             draw_leaf_puck(surf, self.x, self.y, self.radius, now)
 
@@ -154,7 +200,7 @@ class Paddle:
 
     def draw(self, surf: pygame.Surface, now: float) -> None:
         r = int(self.radius(now))
-        neon = P1_NEON if self.player == 0 else P2_NEON
+        ring_color = P1_OUTLINE if self.player == 0 else P2_OUTLINE
         heading = self.face_heading
 
         draw_head_circle(surf, self.x, self.y, float(r), self.player)
@@ -163,12 +209,12 @@ class Paddle:
         if self.is_dashing:
             pulse = 0.5 + 0.5 * math.sin(now * 13)
             dash_r = int(r + 8 + pulse * 5)
-            pygame.draw.circle(surf, (255, 210, 100), (int(self.x), int(self.y)), dash_r, 2)
+            pygame.draw.circle(surf, MENU_TITLE_GLOW, (int(self.x), int(self.y)), dash_r, 2)
         speed = math.hypot(self.vx, self.vy)
         if not self.is_dashing and speed >= 100:
             pulse = 0.5 + 0.5 * math.sin(now * 14)
             ring_r = int(r + 3 + pulse * 2)
-            pygame.draw.circle(surf, neon, (int(self.x), int(self.y)), ring_r, 1)
+            pygame.draw.circle(surf, ring_color, (int(self.x), int(self.y)), ring_r, 1)
 
 
 @dataclass
@@ -183,30 +229,9 @@ class Fence:
     created_at: float = 0.0
     half_width: float = 5.0
 
-    def draw(self, surf: pygame.Surface, now: float, age_rank: float = 1.0) -> None:
-        """age_rank: 0=いちばん古い壁, 1=いちばん新しい壁"""
-        remaining = max(0.0, self.until - now)
-        total = max(0.001, self.until - self.created_at)
-        life_ratio = remaining / total
-        if life_ratio <= TRAIL_FADE_START_RATIO:
-            expire_fade = life_ratio / TRAIL_FADE_START_RATIO
-        else:
-            expire_fade = 1.0
-        age_rank = max(0.0, min(1.0, age_rank))
-        age_brightness = TRAIL_WALL_MIN_BRIGHTNESS + (1.0 - TRAIL_WALL_MIN_BRIGHTNESS) * age_rank
-        fade = expire_fade * age_brightness
-        if fade <= 0.04:
-            return
-
-        body_r = self.half_width if self.half_width > 0 else CATERPILLAR_BODY_RADIUS
-        draw_smooth_tube(
-            surf, self.x1, self.y1, self.x2, self.y2,
-            body_r, self.owner, fade=fade,
-        )
-
 
 def spawn_center_puck() -> Puck:
-    rect = table_rect()
+    rect = playable_rect()
     x = rect.centerx
     y = rect.centery
     return Puck(

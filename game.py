@@ -7,11 +7,23 @@ import pygame
 
 from constants import (
     COUNTDOWN_START,
-    FADE_DURATION,
+    PREP_DARKEN_DURATION,
+    PREP_REVEAL_DURATION,
+    TIPS_DISPLAY_DURATION,
+    TIPS_FADE_IN_DURATION,
+    TIPS_FADE_OUT_DURATION,
     FENCE_BREACH_FLASH_DURATION,
     FENCE_HALF_WIDTH,
     FENCE_MIN_LENGTH,
+    FACEOFF_LIGHT_DURATION,
+    GOAL_FIREFLY_DURATION,
     GOAL_RESET_DELAY,
+    GOAL_SIDE_FLASH_DURATION,
+    GOAL_WALL_PULSE_DURATION,
+    RESULT_CARD_IN_DURATION,
+    RESULT_CELEBRATE_DURATION,
+    RESULT_DIM_DURATION,
+    SCORE_POP_DURATION,
     TRAIL_CENTER_BONUS,
     TRAIL_CENTER_ZONE_RATIO,
     TRAIL_GOAL_LIFETIME,
@@ -24,10 +36,16 @@ from constants import (
     TRAIL_WALL_MAX_PER_PLAYER,
     WIN_SCORE,
 )
-from entities import Fence, Paddle, Puck, spawn_center_puck, table_rect
+from match_prep import PrepPhase
+from menu_selection import SelectionHighlight
+from result_flow import ResultPhase, ease_in_out, normalized_progress
+from entities import Fence, Paddle, Puck, arena_frame_rect, playable_rect, spawn_center_puck, table_rect
+from arena_assets import ArenaLightingState
 from effects import (
     BreachSpark,
     GoalCelebration,
+    PuckResetAnim,
+    goal_mouth_anchor,
     spawn_breach_sparks,
     spawn_goal_celebration,
     update_breach_sparks,
@@ -46,8 +64,7 @@ from physics import (
 class GameState(Enum):
     TITLE = auto()
     CPU_DIFF = auto()
-    FADE = auto()
-    TIPS = auto()
+    PREP = auto()
     COUNTDOWN = auto()
     PLAYING = auto()
     RESULT = auto()
@@ -60,10 +77,10 @@ class Match:
         self.reset_match()
 
     def _init_paddles(self) -> None:
-        rect = table_rect()
+        play = playable_rect()
         self.paddles = [
-            Paddle(player=0, x=rect.left + rect.width * 0.2, y=rect.centery, last_dir=(1.0, 0.0), face_heading=0.0, face_heading_ready=True, prev_x=rect.left + rect.width * 0.2, prev_y=rect.centery),
-            Paddle(player=1, x=rect.right - rect.width * 0.2, y=rect.centery, last_dir=(-1.0, 0.0), face_heading=math.pi, face_heading_ready=True, prev_x=rect.right - rect.width * 0.2, prev_y=rect.centery),
+            Paddle(player=0, x=play.left + play.width * 0.2, y=play.centery, last_dir=(1.0, 0.0), face_heading=0.0, face_heading_ready=True, prev_x=play.left + play.width * 0.2, prev_y=play.centery),
+            Paddle(player=1, x=play.right - play.width * 0.2, y=play.centery, last_dir=(-1.0, 0.0), face_heading=math.pi, face_heading_ready=True, prev_x=play.right - play.width * 0.2, prev_y=play.centery),
         ]
         for paddle in self.paddles:
             paddle.trail_x = paddle.x
@@ -87,10 +104,33 @@ class Match:
         self._pre_pause_state: GameState | None = None
         self.goal_fx: GoalCelebration | None = None
         self.breach_sparks: list[BreachSpark] = []
+        self.score_pop_player: int | None = None
+        self.score_pop_timer: float = 0.0
+        self.puck_reset_anim: PuckResetAnim | None = None
+        self.last_goal_conceded_side: int | None = None
+        self.arena_lighting = ArenaLightingState.inactive()
         self.title_menu_index = 0
+        self.title_menu_sel = SelectionHighlight(0)
         self.cpu_diff_index = 1
-        self.tips_index = 0
+        self.cpu_diff_sel = SelectionHighlight(1)
+        self.cpu_diff_morph = 0.0
+        self.cpu_diff_exiting = False
+        self.prep_from_state: GameState | None = None
+        self.prep_handoff_morph = 1.0
+        self.prep_handoff_menu_index = 0
+        self.tips_text = ""
+        self.tips_timer = 0.0
         self.fade_progress = 0.0
+        self.prep_phase = PrepPhase.DARKEN
+        self.prep_phase_progress = 0.0
+        self.tips_alpha = 0.0
+        self.prep_darkness = 0.0
+        self.prep_reveal = 0.0
+        self.tips_hold_timer = 0.0
+        self.result_phase = ResultPhase.HOLD
+        self.result_phase_progress = 0.0
+        self.result_dimness = 0.0
+        self.result_card_alpha = 0.0
 
     def begin_from_menu(self, vs_cpu: bool) -> None:
         """タイトルメニューから試合準備へ"""
@@ -106,26 +146,107 @@ class Match:
         self.goal_reset_timer = 0.0
         self.goal_fx = None
         self.breach_sparks = []
-        self.tips_index = 0
+        self.score_pop_player = None
+        self.score_pop_timer = 0.0
+        self.puck_reset_anim = None
+        self.last_goal_conceded_side = None
+        self.arena_lighting = ArenaLightingState.inactive()
+        self.tips_text = ""
+        self.tips_timer = 0.0
         self.fade_progress = 0.0
+        self.prep_phase = PrepPhase.DARKEN
+        self.prep_phase_progress = 0.0
+        self.tips_alpha = 0.0
+        self.prep_darkness = 0.0
+        self.prep_reveal = 0.0
+        self.tips_hold_timer = 0.0
+        self.result_phase = ResultPhase.HOLD
+        self.result_phase_progress = 0.0
+        self.result_dimness = 0.0
+        self.result_card_alpha = 0.0
         if vs_cpu:
+            self.cpu_diff_morph = 0.0
+            self.cpu_diff_sel.snap_to(self.cpu_diff_index)
             self.state = GameState.CPU_DIFF
         else:
-            self.state = GameState.FADE
+            self._begin_match_prep_from(GameState.TITLE, menu_index=1)
+
+    def _begin_match_prep_from(self, from_state: GameState, *, menu_index: int = 0) -> None:
+        self.prep_from_state = from_state
+        self.prep_handoff_morph = self.cpu_diff_morph if from_state == GameState.CPU_DIFF else 1.0
+        self.prep_handoff_menu_index = menu_index
+        self.start_match_prep()
+
+    def title_menu_sel_strengths(self) -> tuple[float, float, float]:
+        return tuple(self.title_menu_sel.strength(i) for i in range(3))
+
+    def cpu_diff_sel_strengths(self) -> tuple[float, float, float]:
+        return tuple(self.cpu_diff_sel.strength(i) for i in range(3))
+
+    def start_match_prep(self) -> None:
+        from screens import pick_random_tip
+
+        self.tips_text = pick_random_tip(self.vs_cpu)
+        self.prep_phase = PrepPhase.DARKEN
+        self.prep_phase_progress = 0.0
+        self.tips_alpha = 0.0
+        self.prep_darkness = 0.0
+        self.prep_reveal = 0.0
+        self.tips_hold_timer = 0.0
+        self.state = GameState.PREP
 
     def start_fade_to_tips(self) -> None:
-        self.state = GameState.FADE
-        self.fade_progress = 0.0
+        self._begin_match_prep_from(GameState.CPU_DIFF)
 
-    def enter_countdown(self) -> None:
-        self.state = GameState.COUNTDOWN
+    def skip_tips_display(self) -> None:
+        """TIPS 表示フェーズのみスキップ → 暗転のままコート明転"""
+        if self.state != GameState.PREP:
+            return
+        if self.prep_phase not in (
+            PrepPhase.TIPS_IN,
+            PrepPhase.TIPS_HOLD,
+            PrepPhase.TIPS_OUT,
+        ):
+            return
+        self._begin_prep_reveal()
+
+    def _prepare_countdown(self) -> None:
         self.countdown = COUNTDOWN_START
         self.countdown_timer = 1.0
         self.pucks = [spawn_center_puck()]
         self.pucks_frozen = True
 
+    def _begin_prep_reveal(self) -> None:
+        self._prepare_countdown()
+        self.prep_phase = PrepPhase.REVEAL
+        self.prep_phase_progress = 0.0
+        self.tips_alpha = 0.0
+        self.prep_reveal = 0.0
+        self.tips_hold_timer = 0.0
+
+    def _finish_match_prep(self) -> None:
+        self.prep_reveal = 1.0
+        self.prep_darkness = 0.0
+        self.prep_from_state = None
+        self.state = GameState.COUNTDOWN
+
+    def enter_countdown(self) -> None:
+        self._prepare_countdown()
+        self.state = GameState.COUNTDOWN
+
+    def _begin_tips(self) -> None:
+        self.start_match_prep()
+
     def start_rematch(self, vs_cpu: bool) -> None:
         self.begin_from_menu(vs_cpu)
+
+    def begin_cpu_diff_exit(self) -> None:
+        if self.state != GameState.CPU_DIFF or self.cpu_diff_exiting:
+            return
+        self.cpu_diff_exiting = True
+
+    def cpu_diff_ready(self) -> bool:
+        return self.cpu_diff_morph >= 1.0 and not self.cpu_diff_exiting
 
     def handle_input(
         self,
@@ -136,7 +257,7 @@ class Match:
     ) -> None:
         if self.state == GameState.TITLE:
             return
-        if self.state in (GameState.CPU_DIFF, GameState.FADE, GameState.TIPS):
+        if self.state in (GameState.CPU_DIFF, GameState.PREP):
             return
         if self.state == GameState.RESULT:
             return
@@ -188,17 +309,18 @@ class Match:
 
     def _goal_zone_depth(self, paddle: Paddle, x: float) -> float:
         """自ゴールに近いほど 1.0（ゴールライン=最深）"""
-        rect = table_rect()
-        margin = rect.width * TRAIL_GOAL_ZONE_RATIO
+        play = playable_rect()
+        frame = arena_frame_rect()
+        margin = play.width * TRAIL_GOAL_ZONE_RATIO
         if margin < 1.0:
             return 0.0
         if paddle.player == 0:
-            if x >= rect.left + margin:
+            if x >= frame.left + margin:
                 return 0.0
-            return min(1.0, (rect.left + margin - x) / margin)
-        if x <= rect.right - margin:
+            return min(1.0, (frame.left + margin - x) / margin)
+        if x <= frame.right - margin:
             return 0.0
-        return min(1.0, (x - (rect.right - margin)) / margin)
+        return min(1.0, (x - (frame.right - margin)) / margin)
 
     def _center_line_depth(self, x: float) -> float:
         rect = table_rect()
@@ -302,23 +424,81 @@ class Match:
                     paddle.trail_x = paddle.x
                     paddle.trail_y = paddle.y
 
+    def _advance_prep_phase(self, next_phase: PrepPhase) -> None:
+        self.prep_phase = next_phase
+        self.prep_phase_progress = 0.0
+
+    def _update_prep(self, dt: float) -> None:
+        from match_prep import ease_in_out, normalized_progress
+
+        phase = self.prep_phase
+        self.prep_phase_progress += dt
+        t = normalized_progress(phase, self.prep_phase_progress)
+
+        if phase == PrepPhase.DARKEN:
+            self.prep_darkness = ease_in_out(t)
+            self.prep_reveal = 0.0
+            self.tips_alpha = 0.0
+            if self.prep_phase_progress >= PREP_DARKEN_DURATION:
+                self._advance_prep_phase(PrepPhase.TIPS_IN)
+            return
+
+        if phase == PrepPhase.TIPS_IN:
+            self.prep_darkness = 1.0
+            self.tips_alpha = ease_in_out(t)
+            if self.prep_phase_progress >= TIPS_FADE_IN_DURATION:
+                self.tips_alpha = 1.0
+                self._advance_prep_phase(PrepPhase.TIPS_HOLD)
+                self.tips_hold_timer = TIPS_DISPLAY_DURATION
+            return
+
+        if phase == PrepPhase.TIPS_HOLD:
+            self.prep_darkness = 1.0
+            self.tips_alpha = 1.0
+            self.tips_hold_timer -= dt
+            if self.tips_hold_timer <= 0.0:
+                self._advance_prep_phase(PrepPhase.TIPS_OUT)
+            return
+
+        if phase == PrepPhase.TIPS_OUT:
+            self.prep_darkness = 1.0
+            self.tips_alpha = max(0.0, 1.0 - ease_in_out(t))
+            if self.prep_phase_progress >= TIPS_FADE_OUT_DURATION:
+                self._begin_prep_reveal()
+            return
+
+        if phase == PrepPhase.REVEAL:
+            self.prep_darkness = 1.0
+            self.tips_alpha = 0.0
+            self.prep_reveal = ease_in_out(t)
+            if self.prep_phase_progress >= PREP_REVEAL_DURATION:
+                self._finish_match_prep()
+
     def update(self, dt: float, now: float) -> None:
         if self.state == GameState.TITLE:
+            self.title_menu_sel.update(dt, self.title_menu_index)
             return
         if self.state == GameState.CPU_DIFF:
+            from cpu_diff_morph import MORPH_DURATION, update_morph_progress
+
+            if self.cpu_diff_exiting:
+                self.cpu_diff_morph = max(0.0, self.cpu_diff_morph - dt / MORPH_DURATION)
+                if self.cpu_diff_morph <= 0.0:
+                    self.cpu_diff_exiting = False
+                    self.reset_match()
+                return
+            if self.cpu_diff_morph < 1.0:
+                self.cpu_diff_morph = update_morph_progress(self.cpu_diff_morph, dt)
+            if self.cpu_diff_ready():
+                self.cpu_diff_sel.update(dt, self.cpu_diff_index)
             return
-        if self.state == GameState.FADE:
-            self.fade_progress += dt / FADE_DURATION
-            if self.fade_progress >= 1.0:
-                self.fade_progress = 1.0
-                self.state = GameState.TIPS
-                self.tips_index = 0
-            return
-        if self.state == GameState.TIPS:
+        if self.state == GameState.PREP:
+            self._update_prep(dt)
             return
         if self.state == GameState.PAUSE:
             return
         if self.state == GameState.RESULT:
+            self._update_result(dt)
             return
 
         if self.state == GameState.COUNTDOWN:
@@ -344,12 +524,23 @@ class Match:
         self.breach_sparks = update_breach_sparks(self.breach_sparks, dt)
         if self.announce_timer > 0:
             self.announce_timer -= dt
+        if self.score_pop_timer > 0:
+            self.score_pop_timer -= dt
+            if self.score_pop_timer <= 0:
+                self.score_pop_player = None
+        self._update_arena_lighting(dt)
 
-        if self.goal_reset_timer > 0:
-            self.goal_reset_timer -= dt
-            if self.goal_reset_timer <= 0:
+        if self.puck_reset_anim is not None:
+            if self.puck_reset_anim.update(dt):
+                play = playable_rect()
                 self.pucks = [spawn_center_puck()]
                 self.pucks_frozen = False
+                self.puck_reset_anim = None
+                self.arena_lighting.faceoff_pulse_timer = FACEOFF_LIGHT_DURATION
+        elif self.goal_reset_timer > 0:
+            self.goal_reset_timer -= dt
+            if self.goal_reset_timer <= 0:
+                self._begin_puck_reset_anim()
 
         self._update_fences(now)
 
@@ -432,6 +623,30 @@ class Match:
             if now >= fence.until:
                 self.fences.remove(fence)
 
+    def _update_arena_lighting(self, dt: float) -> None:
+        s0, s1 = self.scores
+        self.arena_lighting.near_win = max(s0, s1) >= WIN_SCORE - 1
+        if self.arena_lighting.goal_flash_timer > 0:
+            self.arena_lighting.goal_flash_timer = max(0.0, self.arena_lighting.goal_flash_timer - dt)
+            if self.arena_lighting.goal_flash_timer <= 0:
+                self.arena_lighting.goal_flash_side = None
+        if self.arena_lighting.faceoff_pulse_timer > 0:
+            self.arena_lighting.faceoff_pulse_timer = max(0.0, self.arena_lighting.faceoff_pulse_timer - dt)
+
+    def _begin_puck_reset_anim(self) -> None:
+        play = playable_rect()
+        if self.last_goal_conceded_side is not None:
+            start_x, start_y = goal_mouth_anchor(self.last_goal_conceded_side)
+        else:
+            start_x, start_y = play.centerx, play.centery
+        self.puck_reset_anim = PuckResetAnim(
+            start_x=start_x,
+            start_y=start_y,
+            end_x=play.centerx,
+            end_y=play.centery,
+        )
+        self.last_goal_conceded_side = None
+
     def _register_goals(self, scored_events: list[tuple[int, Puck]]) -> None:
         """同一フレーム・同一ゴールへの入りは1回だけカウント"""
         batches: dict[int, list[Puck]] = {}
@@ -443,11 +658,17 @@ class Match:
             points = 1
 
             self.scores[scorer] += points
-            self._show_announce(f"葉っぱゲット！ +{points}", 1.5)
-            rect = table_rect()
-            goal_x = rect.left if conceded_side == 0 else rect.right
-            goal_y = pucks[0].y if pucks else rect.centery
-            self.goal_fx = spawn_goal_celebration(goal_x, goal_y, scorer, points)
+            self.score_pop_player = scorer
+            self.score_pop_timer = SCORE_POP_DURATION
+            self.goal_fx = spawn_goal_celebration(conceded_side, scorer, points)
+            self.last_goal_conceded_side = conceded_side
+            self.arena_lighting.goal_flash_side = conceded_side
+            self.arena_lighting.goal_flash_scorer = scorer
+            self.arena_lighting.goal_flash_timer = max(
+                GOAL_SIDE_FLASH_DURATION,
+                GOAL_FIREFLY_DURATION,
+                GOAL_WALL_PULSE_DURATION,
+            )
             if self.audio is not None:
                 self.audio.play_goal()
 
@@ -474,12 +695,61 @@ class Match:
             self.pucks_frozen = True
             self.goal_reset_timer = GOAL_RESET_DELAY
 
+    def _advance_result_phase(self, next_phase: ResultPhase) -> None:
+        self.result_phase = next_phase
+        self.result_phase_progress = 0.0
+
+    def _update_result(self, dt: float) -> None:
+        self.goal_fx = update_goal_celebration(self.goal_fx, dt)
+        self.breach_sparks = update_breach_sparks(self.breach_sparks, dt)
+        if self.score_pop_timer > 0:
+            self.score_pop_timer -= dt
+            if self.score_pop_timer <= 0:
+                self.score_pop_player = None
+        self._update_arena_lighting(dt)
+
+        phase = self.result_phase
+        self.result_phase_progress += dt
+        t = normalized_progress(phase, self.result_phase_progress)
+
+        if phase == ResultPhase.CELEBRATE:
+            self.result_dimness = 0.0
+            self.result_card_alpha = 0.0
+            if self.result_phase_progress >= RESULT_CELEBRATE_DURATION:
+                self._advance_result_phase(ResultPhase.DIM)
+            return
+
+        if phase == ResultPhase.DIM:
+            self.result_dimness = ease_in_out(t)
+            self.result_card_alpha = 0.0
+            if self.result_phase_progress >= RESULT_DIM_DURATION:
+                self.result_dimness = 1.0
+                self._advance_result_phase(ResultPhase.CARD_IN)
+            return
+
+        if phase == ResultPhase.CARD_IN:
+            self.result_dimness = 1.0
+            self.result_card_alpha = ease_in_out(t)
+            if self.result_phase_progress >= RESULT_CARD_IN_DURATION:
+                self.result_card_alpha = 1.0
+                self._advance_result_phase(ResultPhase.HOLD)
+            return
+
+        self.result_dimness = 1.0
+        self.result_card_alpha = 1.0
+
     def _check_win(self) -> None:
         if self.state != GameState.PLAYING:
             return
         for i in range(2):
             if self.scores[i] >= WIN_SCORE:
                 self.winner = i
+                self.goal_reset_timer = 0.0
+                self.puck_reset_anim = None
+                self.result_phase = ResultPhase.CELEBRATE
+                self.result_phase_progress = 0.0
+                self.result_dimness = 0.0
+                self.result_card_alpha = 0.0
                 self.state = GameState.RESULT
                 return
 

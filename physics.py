@@ -54,7 +54,15 @@ from constants import (
     PUCK_MAX_SPEED,
     PUCK_MIN_SPEED,
 )
-from entities import Fence, Paddle, Puck, clamp_speed, goal_bounds, table_rect
+from entities import (
+    Fence,
+    Paddle,
+    Puck,
+    clamp_speed,
+    goal_bounds,
+    goal_score_bounds,
+    playable_rect,
+)
 
 
 def _normalize(dx: float, dy: float) -> tuple[float, float]:
@@ -84,41 +92,53 @@ def resolve_puck_wall(puck: Puck) -> tuple[Optional[int], bool]:
     """壁反射。返値: (ゴール側 0=P1左 1=P2右, 壁バウンドしたか)"""
     if puck.scored:
         return None, False
-    rect = table_rect()
+    play = playable_rect()
     r = puck.radius
     goal_top, goal_bottom = goal_bounds()
+    score_left, score_right = goal_score_bounds()
+    in_goal_lane = goal_top <= puck.y <= goal_bottom
+    in_left_pocket = puck.x - r < play.left
+    in_right_pocket = puck.x + r > play.right
+    in_goal_pocket = in_left_pocket or in_right_pocket
     scored_side: Optional[int] = None
     bounced = False
 
-    # 上下壁（全面）
-    if puck.y - r < rect.top:
-        puck.y = rect.top + r
-        puck.vy = abs(puck.vy) * ELASTICITY
-        bounced = True
-    elif puck.y + r > rect.bottom:
-        puck.y = rect.bottom - r
-        puck.vy = -abs(puck.vy) * ELASTICITY
-        bounced = True
+    # 上下壁（ゴールポケット内かつレーン内だけ goal_top/bottom、それ以外は play 上下）
+    if in_goal_pocket and in_goal_lane:
+        if puck.y - r < goal_top:
+            puck.y = goal_top + r
+            puck.vy = abs(puck.vy) * ELASTICITY
+            bounced = True
+        elif puck.y + r > goal_bottom:
+            puck.y = goal_bottom - r
+            puck.vy = -abs(puck.vy) * ELASTICITY
+            bounced = True
+    else:
+        if puck.y - r < play.top:
+            puck.y = play.top + r
+            puck.vy = abs(puck.vy) * ELASTICITY
+            bounced = True
+        elif puck.y + r > play.bottom:
+            puck.y = play.bottom - r
+            puck.vy = -abs(puck.vy) * ELASTICITY
+            bounced = True
 
-    # 左壁（P1ゴール）
-    if puck.x - r < rect.left:
-        if goal_top <= puck.y <= goal_bottom:
+    # 左右（ゴールレーン内は奥まで進入可、得点ラインで判定）
+    if in_goal_lane:
+        if puck.x - r < score_left:
             scored_side = 0
             puck.scored = True
-        else:
-            puck.x = rect.left + r
-            puck.vx = abs(puck.vx) * ELASTICITY
-            bounced = True
-
-    # 右壁（P2ゴール）
-    if puck.x + r > rect.right:
-        if goal_top <= puck.y <= goal_bottom:
+        elif puck.x + r > score_right:
             scored_side = 1
             puck.scored = True
-        else:
-            puck.x = rect.right - r
-            puck.vx = -abs(puck.vx) * ELASTICITY
-            bounced = True
+    elif puck.x - r < play.left:
+        puck.x = play.left + r
+        puck.vx = abs(puck.vx) * ELASTICITY
+        bounced = True
+    elif puck.x + r > play.right:
+        puck.x = play.right - r
+        puck.vx = -abs(puck.vx) * ELASTICITY
+        bounced = True
 
     if bounced and scored_side is None:
         _apply_rally_escalation(puck)
@@ -157,11 +177,11 @@ def _is_head_on_hit(paddle: Paddle, pnx: float, pny: float) -> bool:
 
 def _wall_cling_axis(puck: Puck) -> tuple[bool, float]:
     """上下壁際。返値: (壁際か, コート内方向の y 成分)"""
-    rect = table_rect()
+    play = playable_rect()
     r = puck.radius
-    if puck.y - r <= rect.top + WALL_GRIND_MARGIN:
+    if puck.y - r <= play.top + WALL_GRIND_MARGIN:
         return True, 1.0
-    if puck.y + r >= rect.bottom - WALL_GRIND_MARGIN:
+    if puck.y + r >= play.bottom - WALL_GRIND_MARGIN:
         return True, -1.0
     return False, 0.0
 
@@ -188,9 +208,9 @@ def _reset_wall_grind(puck: Puck) -> None:
 def _pick_escape_x(puck: Puck) -> float:
     if puck.grind_escape_x != 0.0:
         return puck.grind_escape_x
-    rect = table_rect()
-    room_l = puck.x - rect.left
-    room_r = rect.right - puck.x
+    play = playable_rect()
+    room_l = puck.x - play.left
+    room_r = play.right - puck.x
     if random.random() < WALL_PINCH_ESCAPE_BIAS:
         side = -1.0 if room_l >= room_r else 1.0
     else:
@@ -200,12 +220,12 @@ def _pick_escape_x(puck: Puck) -> float:
 
 
 def _unstick_from_wall(puck: Puck, inward_y: float) -> None:
-    rect = table_rect()
+    play = playable_rect()
     r = puck.radius
     if inward_y > 0.0:
-        puck.y = max(puck.y, rect.top + r + 3.0)
+        puck.y = max(puck.y, play.top + r + 3.0)
     elif inward_y < 0.0:
-        puck.y = min(puck.y, rect.bottom - r - 3.0)
+        puck.y = min(puck.y, play.bottom - r - 3.0)
 
 
 def _maybe_jitter_dir(sx: float, sy: float, *, head_on: bool) -> tuple[float, float]:
@@ -287,9 +307,9 @@ def _apply_wall_pinch_escape(puck: Puck, inward_y: float) -> None:
     puck.vy = sy * speed
     puck.x += ex * 14.0
     _unstick_from_wall(puck, inward_y)
-    rect = table_rect()
+    play = playable_rect()
     r = puck.radius
-    puck.x = max(rect.left + r, min(rect.right - r, puck.x))
+    puck.x = max(play.left + r, min(play.right - r, puck.x))
 
 
 def _head_on_min_exit(paddle: Paddle, *, min_exit_base: float = 0.0, speed_ratio: float = 0.0) -> float:
@@ -651,10 +671,10 @@ def resolve_paddle_paddle(a: Paddle, b: Paddle, now: float) -> None:
 
 
 def clamp_paddle_to_table(paddle: Paddle, now: float) -> None:
-    rect = table_rect()
+    play = playable_rect()
     r = paddle.radius(now)
-    paddle.x = max(rect.left + r, min(rect.right - r, paddle.x))
-    paddle.y = max(rect.top + r, min(rect.bottom - r, paddle.y))
+    paddle.x = max(play.left + r, min(play.right - r, paddle.x))
+    paddle.y = max(play.top + r, min(play.bottom - r, paddle.y))
 
 
 def _closest_on_segment(

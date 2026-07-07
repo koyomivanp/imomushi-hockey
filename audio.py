@@ -28,34 +28,87 @@ class BGMMode(Enum):
     BATTLE = auto()
 
 
-def _make_tone(freq: float, duration: float, volume: float = 0.35) -> pygame.mixer.Sound:
+def _make_wood_tap(duration: float = 0.11, volume: float = 0.48) -> pygame.mixer.Sound:
     n = int(SAMPLE_RATE * duration)
     buf = array.array("h")
     max_amp = int(32767 * volume)
     for i in range(n):
         t = i / SAMPLE_RATE
         env = math.exp(-t * 28)
-        v = int(max_amp * env * math.sin(2 * math.pi * freq * t))
+        thump = math.sin(2 * math.pi * 95 * t) * 0.42 * math.exp(-t * 22)
+        body = math.sin(2 * math.pi * 145 * t) * 0.55 + math.sin(2 * math.pi * 290 * t) * 0.18
+        click = math.sin(2 * math.pi * 380 * t) * 0.14 * math.exp(-t * 95)
+        grain = math.sin(t * 6800 + i * 0.6) * 0.1 * math.exp(-t * 50)
+        v = int(max_amp * env * (thump + body + click + grain))
         buf.append(v)
         buf.append(v)
     return pygame.mixer.Sound(buffer=buf)
 
 
-def _make_swoosh(duration: float = 0.11, volume: float = 0.32) -> pygame.mixer.Sound:
+def _make_leaf_swoosh(duration: float = 0.14, volume: float = 0.38) -> pygame.mixer.Sound:
     n = int(SAMPLE_RATE * duration)
     buf = array.array("h")
     max_amp = int(32767 * volume)
     for i in range(n):
         t = i / SAMPLE_RATE
-        env = math.exp(-t * 22.0) * (1.0 - t / duration)
-        freq = 920.0 - 520.0 * (t / duration)
+        env = (1.0 - t / duration) * math.exp(-t * 12)
+        freq = 900.0 - 520.0 * (t / duration)
+        tone = math.sin(2 * math.pi * freq * t) * 0.35
+        rustle = math.sin(t * 6200 + i * 1.3) * 0.18 * (1.0 - t / duration)
+        v = int(max_amp * env * (tone + rustle))
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _make_goal_chime(duration: float = 0.42, volume: float = 0.5) -> pygame.mixer.Sound:
+    freqs = (392.0, 523.25, 659.25)
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        env = math.exp(-t * 5.5)
+        sample = 0.0
+        for j, f in enumerate(freqs):
+            onset = j * 0.06
+            if t >= onset:
+                sample += math.sin(2 * math.pi * f * (t - onset)) * 0.32 * math.exp(-(t - onset) * 4)
+        v = int(max_amp * env * sample)
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _make_pop(freq: float = 320.0, duration: float = 0.07, volume: float = 0.3) -> pygame.mixer.Sound:
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        env = math.exp(-t * 40)
         v = int(max_amp * env * math.sin(2 * math.pi * freq * t))
         buf.append(v)
         buf.append(v)
     return pygame.mixer.Sound(buffer=buf)
 
 
-def _load_or_tone(name: str, freq: float, duration: float) -> pygame.mixer.Sound:
+def _make_trail_boop(base: float, duration: float = 0.032, volume: float = 0.1) -> pygame.mixer.Sound:
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        env = math.exp(-t * 72)
+        soft = math.sin(2 * math.pi * base * t) * 0.55
+        squish = math.sin(2 * math.pi * base * 0.75 * t) * 0.25 * math.exp(-t * 90)
+        v = int(max_amp * env * (soft + squish))
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _load_or_wood_tap(name: str) -> pygame.mixer.Sound:
     for ext in (".wav", ".ogg", ".mp3"):
         path = SOUNDS_DIR / f"{name}{ext}"
         if path.is_file():
@@ -63,10 +116,10 @@ def _load_or_tone(name: str, freq: float, duration: float) -> pygame.mixer.Sound
                 return pygame.mixer.Sound(str(path))
             except pygame.error:
                 pass
-    return _make_tone(freq, duration)
+    return _make_wood_tap()
 
 
-def _load_or_swoosh(name: str) -> pygame.mixer.Sound:
+def _load_or_leaf_swoosh(name: str) -> pygame.mixer.Sound:
     for ext in (".wav", ".ogg", ".mp3"):
         path = SOUNDS_DIR / f"{name}{ext}"
         if path.is_file():
@@ -74,7 +127,29 @@ def _load_or_swoosh(name: str) -> pygame.mixer.Sound:
                 return pygame.mixer.Sound(str(path))
             except pygame.error:
                 pass
-    return _make_swoosh()
+    return _make_leaf_swoosh()
+
+
+def _load_or_goal(name: str) -> pygame.mixer.Sound:
+    for ext in (".wav", ".ogg", ".mp3"):
+        path = SOUNDS_DIR / f"{name}{ext}"
+        if path.is_file():
+            try:
+                return pygame.mixer.Sound(str(path))
+            except pygame.error:
+                pass
+    return _make_goal_chime()
+
+
+def _load_or_pop(name: str, freq: float) -> pygame.mixer.Sound:
+    for ext in (".wav", ".ogg", ".mp3"):
+        path = SOUNDS_DIR / f"{name}{ext}"
+        if path.is_file():
+            try:
+                return pygame.mixer.Sound(str(path))
+            except pygame.error:
+                pass
+    return _make_pop(freq)
 
 
 def _find_track(names: tuple[str, ...], extensions: tuple[str, ...] = (".mp3", ".ogg", ".wav")) -> Path | None:
@@ -92,16 +167,16 @@ class SoundManager:
             pygame.mixer.init(frequency=SAMPLE_RATE, size=-16, channels=2, buffer=512)
         pygame.mixer.set_num_channels(12)
         self.enabled = True
-        self._bounce_base = _load_or_tone("wall_bounce", 520, 0.07)
-        self._goal = _load_or_tone("goal", 660, 0.35)
-        self._countdown = _load_or_tone("countdown", 880, 0.06)
-        self._start = _load_or_tone("start", 990, 0.12)
-        self._fence_breach = _load_or_swoosh("fence_breach")
+        self._bounce_base = _load_or_wood_tap("wall_bounce")
+        self._goal = _load_or_goal("goal")
+        self._countdown = _load_or_pop("countdown", 320.0)
+        self._start = _load_or_pop("start", 440.0)
+        self._fence_breach = _load_or_leaf_swoosh("fence_breach")
         self._last_bounce_at = 0.0
         self._last_trail_at = 0.0
         self._last_breach_at = 0.0
-        self._bounce_cooldown = 0.04
-        self._trail_cooldown = 0.045
+        self._bounce_cooldown = 0.045
+        self._trail_cooldown = 0.065
         self._breach_cooldown = 0.06
         self._trail_pitch = 0.0
         self._title_path = _find_track(("bgm_title", "bgm", "music"))
@@ -142,12 +217,8 @@ class SoundManager:
     def play_battle_bgm(self) -> None:
         self._play_mode(BGMMode.BATTLE)
 
-    def start_bgm(self) -> None:
-        """互換用 — タイトルBGMを再生"""
-        self.play_title_bgm()
-
     def set_bgm_for_state(self, state_name: str) -> None:
-        if state_name == "TITLE" or state_name in ("CPU_DIFF", "FADE", "TIPS"):
+        if state_name == "TITLE" or state_name in ("CPU_DIFF", "PREP"):
             if self._current_mode != BGMMode.TITLE:
                 self.play_title_bgm()
         elif state_name in ("COUNTDOWN", "PLAYING", "RESULT"):
@@ -187,21 +258,13 @@ class SoundManager:
         if now - self._last_bounce_at < self._bounce_cooldown:
             return
         self._last_bounce_at = now
-        vol = min(1.0, 0.5 + bounce_count * 0.04)
-        if bounce_count <= 1:
-            self._play(self._bounce_base, vol)
-            return
-        freq = 440 + min(14, bounce_count) * 48
-        tone = _make_tone(freq, 0.05 + min(0.05, bounce_count * 0.003), 0.3 * vol)
-        self._play(tone, 1.0)
-        if bounce_count <= 3:
-            self._play(self._bounce_base, vol * 0.35)
+        vol = min(0.32, 0.14 + bounce_count * 0.012)
+        self._play(self._bounce_base, vol)
 
     def play_rally_milestone(self, bounce_count: int) -> None:
         if bounce_count not in (3, 5, 8):
             return
-        freq = 520 + bounce_count * 40
-        self._play(_make_tone(freq, 0.1, 0.45), 0.8)
+        self._play(self._bounce_base, min(0.28, 0.18 + bounce_count * 0.008))
 
     def play_trail_crawl(self, now: float) -> None:
         """体節が這うときのぽよ音"""
@@ -209,9 +272,9 @@ class SoundManager:
             return
         self._last_trail_at = now
         self._trail_pitch = 0.62 if self._trail_pitch < 0.5 else 0.38
-        base = 210.0 if self._trail_pitch < 0.5 else 255.0
-        tone = _make_tone(base, 0.035, 0.16)
-        self._play(tone, 0.42)
+        base = 130.0 if self._trail_pitch < 0.5 else 155.0
+        tone = _make_trail_boop(base)
+        self._play(tone, 0.17)
 
     def play_fence_breach(self, now: float) -> None:
         """体節貫通時のシュッという音"""
