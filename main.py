@@ -170,25 +170,46 @@ def main() -> None:
                     screen, fullscreen = toggle_fullscreen(screen, fullscreen)
                 elif event.key in (pygame.K_UP, pygame.K_w):
                     if match.state == GameState.TITLE:
+                        prev = match.title_menu_index
                         match.title_menu_index = (match.title_menu_index - 1) % 3
+                        if audio is not None and match.title_menu_index != prev:
+                            audio.play_menu_move()
                 elif event.key in (pygame.K_DOWN, pygame.K_s):
                     if match.state == GameState.TITLE:
+                        prev = match.title_menu_index
                         match.title_menu_index = (match.title_menu_index + 1) % 3
+                        if audio is not None and match.title_menu_index != prev:
+                            audio.play_menu_move()
                 elif event.key in (pygame.K_a, pygame.K_LEFT):
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
+                        prev = match.cpu_diff_index
                         match.cpu_diff_index = (match.cpu_diff_index - 1) % 3
+                        if audio is not None and match.cpu_diff_index != prev:
+                            audio.play_menu_move()
                 elif event.key in (pygame.K_d, pygame.K_RIGHT):
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
+                        prev = match.cpu_diff_index
                         match.cpu_diff_index = (match.cpu_diff_index + 1) % 3
+                        if audio is not None and match.cpu_diff_index != prev:
+                            audio.play_menu_move()
                 elif event.key in (pygame.K_3, pygame.K_KP3):
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
+                        prev = match.cpu_diff_index
                         match.cpu_diff_index = 0
+                        if audio is not None and match.cpu_diff_index != prev:
+                            audio.play_menu_move()
                 elif event.key in (pygame.K_4, pygame.K_KP4):
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
+                        prev = match.cpu_diff_index
                         match.cpu_diff_index = 1
+                        if audio is not None and match.cpu_diff_index != prev:
+                            audio.play_menu_move()
                 elif event.key in (pygame.K_5, pygame.K_KP5):
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
+                        prev = match.cpu_diff_index
                         match.cpu_diff_index = 2
+                        if audio is not None and match.cpu_diff_index != prev:
+                            audio.play_menu_move()
                 elif event.key == pygame.K_m:
                     if audio is not None:
                         bgm_muted = audio.toggle_bgm_mute()

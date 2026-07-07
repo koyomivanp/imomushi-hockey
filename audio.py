@@ -80,6 +80,93 @@ def _make_goal_chime(duration: float = 0.42, volume: float = 0.5) -> pygame.mixe
     return pygame.mixer.Sound(buffer=buf)
 
 
+def _make_score_tick(duration: float = 0.12, volume: float = 0.34) -> pygame.mixer.Sound:
+    freqs = (523.25, 659.25)
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        sample = 0.0
+        for j, f in enumerate(freqs):
+            onset = j * 0.04
+            if t >= onset:
+                sample += math.sin(2 * math.pi * f * (t - onset)) * 0.42 * math.exp(-(t - onset) * 9)
+        wood = math.sin(2 * math.pi * 196 * t) * 0.08 * math.exp(-t * 18)
+        v = int(max_amp * sample * math.exp(-t * 6) + max_amp * wood)
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _make_victory_fanfare(duration: float = 0.78, volume: float = 0.52) -> pygame.mixer.Sound:
+    notes = ((392.0, 0.0), (523.25, 0.14), (659.25, 0.28), (783.99, 0.42))
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        sample = 0.0
+        for freq, onset in notes:
+            if t >= onset:
+                sample += math.sin(2 * math.pi * freq * (t - onset)) * 0.34 * math.exp(-(t - onset) * 3.2)
+        flutter = math.sin(t * 4200) * 0.05 * math.exp(-t * 10)
+        v = int(max_amp * (sample + flutter) * math.exp(-t * 2.8))
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _make_defeat_tone(duration: float = 0.55, volume: float = 0.38) -> pygame.mixer.Sound:
+    notes = ((349.23, 0.0), (261.63, 0.22))
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        sample = 0.0
+        for freq, onset in notes:
+            if t >= onset:
+                sample += math.sin(2 * math.pi * freq * (t - onset)) * 0.36 * math.exp(-(t - onset) * 4.5)
+        v = int(max_amp * sample * math.exp(-t * 3.5))
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _make_menu_move(duration: float = 0.06, volume: float = 0.26) -> pygame.mixer.Sound:
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        env = math.exp(-t * 55)
+        tap = math.sin(2 * math.pi * 280 * t) * 0.5 + math.sin(2 * math.pi * 420 * t) * 0.15 * math.exp(-t * 80)
+        v = int(max_amp * env * tap)
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
+def _make_result_card(duration: float = 0.32, volume: float = 0.36) -> pygame.mixer.Sound:
+    n = int(SAMPLE_RATE * duration)
+    buf = array.array("h")
+    max_amp = int(32767 * volume)
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        swoosh_env = (1.0 - t / duration) * math.exp(-t * 8)
+        freq = 720.0 - 380.0 * (t / duration)
+        swoosh = math.sin(2 * math.pi * freq * t) * 0.28 * swoosh_env
+        chime = 0.0
+        if t >= 0.12:
+            ct = t - 0.12
+            chime = math.sin(2 * math.pi * 440 * ct) * 0.3 * math.exp(-ct * 7)
+        v = int(max_amp * (swoosh + chime))
+        buf.append(v)
+        buf.append(v)
+    return pygame.mixer.Sound(buffer=buf)
+
+
 def _make_pop(freq: float = 320.0, duration: float = 0.07, volume: float = 0.3) -> pygame.mixer.Sound:
     n = int(SAMPLE_RATE * duration)
     buf = array.array("h")
@@ -152,6 +239,17 @@ def _load_or_pop(name: str, freq: float) -> pygame.mixer.Sound:
     return _make_pop(freq)
 
 
+def _load_or_custom(name: str, fallback) -> pygame.mixer.Sound:
+    for ext in (".wav", ".ogg", ".mp3"):
+        path = SOUNDS_DIR / f"{name}{ext}"
+        if path.is_file():
+            try:
+                return pygame.mixer.Sound(str(path))
+            except pygame.error:
+                pass
+    return fallback()
+
+
 def _find_track(names: tuple[str, ...], extensions: tuple[str, ...] = (".mp3", ".ogg", ".wav")) -> Path | None:
     for name in names:
         for ext in extensions:
@@ -172,6 +270,11 @@ class SoundManager:
         self._countdown = _load_or_pop("countdown", 320.0)
         self._start = _load_or_pop("start", 440.0)
         self._fence_breach = _load_or_leaf_swoosh("fence_breach")
+        self._score_tick = _load_or_custom("score_tick", _make_score_tick)
+        self._victory = _load_or_custom("victory", _make_victory_fanfare)
+        self._defeat = _load_or_custom("defeat", _make_defeat_tone)
+        self._menu_move = _load_or_custom("menu_move", _make_menu_move)
+        self._result_card = _load_or_custom("result_card", _make_result_card)
         self._last_bounce_at = 0.0
         self._last_trail_at = 0.0
         self._last_breach_at = 0.0
@@ -291,3 +394,18 @@ class SoundManager:
 
     def play_start(self) -> None:
         self._play(self._start, 0.85)
+
+    def play_score_tick(self) -> None:
+        self._play(self._score_tick, 0.75)
+
+    def play_victory(self) -> None:
+        self._play(self._victory, 0.88)
+
+    def play_defeat(self) -> None:
+        self._play(self._defeat, 0.72)
+
+    def play_menu_move(self) -> None:
+        self._play(self._menu_move, 0.65)
+
+    def play_result_card(self) -> None:
+        self._play(self._result_card, 0.7)

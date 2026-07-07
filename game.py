@@ -671,6 +671,7 @@ class Match:
             )
             if self.audio is not None:
                 self.audio.play_goal()
+                self.audio.play_score_tick()
 
             for puck in pucks:
                 if puck in self.pucks:
@@ -725,6 +726,8 @@ class Match:
             if self.result_phase_progress >= RESULT_DIM_DURATION:
                 self.result_dimness = 1.0
                 self._advance_result_phase(ResultPhase.CARD_IN)
+                if self.audio is not None:
+                    self.audio.play_result_card()
             return
 
         if phase == ResultPhase.CARD_IN:
@@ -751,6 +754,11 @@ class Match:
                 self.result_dimness = 0.0
                 self.result_card_alpha = 0.0
                 self.state = GameState.RESULT
+                if self.audio is not None:
+                    if self.vs_cpu and i == 1:
+                        self.audio.play_defeat()
+                    else:
+                        self.audio.play_victory()
                 return
 
     def _show_announce(self, text: str, duration: float) -> None:

@@ -116,6 +116,88 @@ def synth_start_fanfare() -> array.array:
     return _stereo(mono)
 
 
+def synth_score_tick() -> array.array:
+    duration = 0.12
+    freqs = (523.25, 659.25)
+    n = int(SAMPLE_RATE * duration)
+    mono: list[int] = []
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        sample = 0.0
+        for j, f in enumerate(freqs):
+            onset = j * 0.04
+            if t >= onset:
+                sample += math.sin(2 * math.pi * f * (t - onset)) * 0.42 * math.exp(-(t - onset) * 9)
+        wood = math.sin(2 * math.pi * 196 * t) * 0.08 * math.exp(-t * 18)
+        v = int(32767 * 0.34 * sample * math.exp(-t * 6) + 32767 * wood)
+        mono.append(v)
+    return _stereo(mono)
+
+
+def synth_victory_fanfare() -> array.array:
+    duration = 0.78
+    notes = ((392.0, 0.0), (523.25, 0.14), (659.25, 0.28), (783.99, 0.42))
+    n = int(SAMPLE_RATE * duration)
+    mono: list[int] = []
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        sample = 0.0
+        for freq, onset in notes:
+            if t >= onset:
+                sample += math.sin(2 * math.pi * freq * (t - onset)) * 0.34 * math.exp(-(t - onset) * 3.2)
+        flutter = math.sin(t * 4200) * 0.05 * math.exp(-t * 10)
+        v = int(32767 * 0.52 * (sample + flutter) * math.exp(-t * 2.8))
+        mono.append(v)
+    return _stereo(mono)
+
+
+def synth_defeat_tone() -> array.array:
+    duration = 0.55
+    notes = ((349.23, 0.0), (261.63, 0.22))
+    n = int(SAMPLE_RATE * duration)
+    mono: list[int] = []
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        sample = 0.0
+        for freq, onset in notes:
+            if t >= onset:
+                sample += math.sin(2 * math.pi * freq * (t - onset)) * 0.36 * math.exp(-(t - onset) * 4.5)
+        v = int(32767 * 0.38 * sample * math.exp(-t * 3.5))
+        mono.append(v)
+    return _stereo(mono)
+
+
+def synth_menu_move() -> array.array:
+    duration = 0.06
+    n = int(SAMPLE_RATE * duration)
+    mono: list[int] = []
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        env = math.exp(-t * 55)
+        tap = math.sin(2 * math.pi * 280 * t) * 0.5 + math.sin(2 * math.pi * 420 * t) * 0.15 * math.exp(-t * 80)
+        v = int(32767 * 0.26 * env * tap)
+        mono.append(v)
+    return _stereo(mono)
+
+
+def synth_result_card() -> array.array:
+    duration = 0.32
+    n = int(SAMPLE_RATE * duration)
+    mono: list[int] = []
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        swoosh_env = (1.0 - t / duration) * math.exp(-t * 8)
+        freq = 720.0 - 380.0 * (t / duration)
+        swoosh = math.sin(2 * math.pi * freq * t) * 0.28 * swoosh_env
+        chime = 0.0
+        if t >= 0.12:
+            ct = t - 0.12
+            chime = math.sin(2 * math.pi * 440 * ct) * 0.3 * math.exp(-ct * 7)
+        v = int(32767 * 0.36 * (swoosh + chime))
+        mono.append(v)
+    return _stereo(mono)
+
+
 def _ambient_track(bpm: float, chords: list[tuple[float, ...]], seconds: float, pulse: float) -> array.array:
     n = int(SAMPLE_RATE * seconds)
     beat = 60.0 / bpm
@@ -144,6 +226,11 @@ def main() -> int:
         "goal.wav": synth_goal_chime(),
         "countdown.wav": synth_pop(),
         "start.wav": synth_start_fanfare(),
+        "score_tick.wav": synth_score_tick(),
+        "victory.wav": synth_victory_fanfare(),
+        "defeat.wav": synth_defeat_tone(),
+        "menu_move.wav": synth_menu_move(),
+        "result_card.wav": synth_result_card(),
         "bgm_title.wav": _ambient_track(
             85,
             [(146.83, 220.0, 293.66), (164.81, 246.94, 329.63)],
