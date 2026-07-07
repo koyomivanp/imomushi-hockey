@@ -11,6 +11,7 @@
 
 - 作品ページ: [koyomivanp.github.io/imomushi-hockey/](https://koyomivanp.github.io/imomushi-hockey/)
 - リポジトリ: [github.com/koyomivanp/imomushi-hockey](https://github.com/koyomivanp/imomushi-hockey)
+- itch.io: [koyomivanp.itch.io/imomushi-hockey](https://koyomivanp.itch.io/imomushi-hockey)（Windows 版ダウンロード）
 
 ## 必要環境
 
@@ -94,6 +95,16 @@ pip install -r requirements-build.txt
 ```
 
 `dist\ImomushiHockey\` に実行ファイルが出力されます。配布時はフォルダごと ZIP にしてください。
+
+## itch.io 公開
+
+Windows ZIP・カバー・ストア文案は `itch/` に用意しています。手順は [itch/README.md](itch/README.md)。
+
+```powershell
+# API キー設定後
+$env:BUTLER_API_KEY = "your-key"
+.\dev\publish_itch.ps1
+```
 
 ## カスタム BGM / SE
 

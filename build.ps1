@@ -6,17 +6,16 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
 if (-not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
-    Write-Host "PyInstaller が見つかりません。pip install -r requirements-build.txt を実行してください。"
-    exit 1
+    if (-not (python -m PyInstaller --version 2>$null)) {
+        Write-Host "PyInstaller not found. Run: pip install -r requirements-build.txt"
+        exit 1
+    }
+    $PyInstaller = "python -m PyInstaller"
+} else {
+    $PyInstaller = "pyinstaller"
 }
 
-pyinstaller `
-    --noconfirm `
-    --clean `
-    --windowed `
-    --name ImomushiHockey `
-    --add-data "assets;assets" `
-    main.py
+Invoke-Expression "$PyInstaller --noconfirm --clean --windowed --name ImomushiHockey --add-data `"assets;assets`" main.py"
 
 Write-Host ""
 Write-Host "ビルド完了: dist\ImomushiHockey\ImomushiHockey.exe"

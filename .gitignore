@@ -8,4 +8,6 @@ venv/
 dev/out/
 .cursor/
 .summer/
+itch/release/
+itch/tools/
 _pdf_page*.png
