@@ -12,3 +12,4 @@ itch/release/
 itch/tools/
 _pdf_page*.png
 dist-web/
+*.bundle
