@@ -4,9 +4,10 @@
 
 ## Controls
 
-- P1芋虫: WASD + Shift（CPU対戦時は Shift 左右どちらでも）
-- P2芋虫: Arrow keys + Shift
-- Title: ↑↓ 選択, Space 決定, H=help, Esc=終了
+- P1芋虫: WASD + 左Shift（CPU対戦時は Shift 左右どちらでも）
+- P2芋虫: Arrow keys + 右Shift
+- Title: ↑↓ 選択, Space 決定, H=遊び方, M=BGM, F=フルスクリーン, Esc=終了
+- 対戦中: P/Esc=ポーズ（ポーズ中 Esc でタイトルへ）
 - CPU難易度: A/D 選択, Space 決定
 - バトル前: 暗転 → TIPS → カウントダウン
 
