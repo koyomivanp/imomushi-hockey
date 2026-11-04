@@ -1,7 +1,6 @@
 """エントリ・ゲームループ・描画"""
 
 import sys
-import time
 
 import pygame
 
@@ -23,6 +22,7 @@ from constants import (
     GAME_TITLE,
     LOGO_FILL,
     LOGO_OUTLINE,
+    MAX_FRAME_DT,
     MENU_BORDER,
     MENU_TEXT_DIM,
     SCREEN_H,
@@ -139,14 +139,13 @@ def main() -> None:
         audio.play_title_bgm()
     cpu_ai = CPUAI(DEFAULT_CPU_DIFFICULTY)
     running = True
-    start_time = time.perf_counter()
+    now = 0.0  # ゲーム時計 — 単調増加し、ポーズ中は止まる
     bgm_paused = False
     bgm_muted = False
     fullscreen = False
 
     while running:
-        dt = clock.tick(FPS) / 1000.0
-        now = time.perf_counter() - start_time
+        dt = min(clock.tick(FPS) / 1000.0, MAX_FRAME_DT)
         keys = pygame.key.get_pressed()
 
         for event in pygame.event.get():
@@ -230,10 +229,12 @@ def main() -> None:
                     elif match.state == GameState.RESULT:
                         if match.result_phase == ResultPhase.HOLD:
                             match.start_rematch(match.vs_cpu)
-                            start_time = time.perf_counter()
                 elif event.key == pygame.K_p:
                     if match.state in (GameState.PLAYING, GameState.COUNTDOWN, GameState.PAUSE):
                         match.toggle_pause()
+
+        if match.state != GameState.PAUSE:
+            now += dt
 
         if match.state not in (GameState.PAUSE, GameState.TITLE, GameState.CPU_DIFF, GameState.PREP):
             ai = cpu_ai if match.vs_cpu else None

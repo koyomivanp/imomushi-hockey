@@ -13,6 +13,7 @@ P2_LABEL = "P2芋虫"
 SCREEN_W = 800
 SCREEN_H = 600
 FPS = 60
+MAX_FRAME_DT = 0.05  # ウィンドウのドラッグ等で dt が跳ねても葉っぱが飛ばない上限
 
 # 色 — 森テーマ × 芋虫パレット（タイトル/HUD と統一）
 BG_COLOR = (0, 0, 0)
@@ -144,7 +145,7 @@ BGM_BATTLE_VOLUME = 0.22
 
 # ラリーエスカレーション（壁反射のたびに加速）
 RALLY_BOUNCE_BOOST = 0.045
-RALLY_BOUNCE_MAX_MULT = 1.7
+RALLY_BOUNCE_MAX_MULT = 1.35
 
 # カウントダウン
 COUNTDOWN_START = 3
