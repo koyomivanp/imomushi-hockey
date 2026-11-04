@@ -218,3 +218,29 @@ TIPS_COMMON: tuple[str, ...] = (
 )
 TIPS_CPU_CONTROLS = "WASD で移動。Shift は左右どちらでもダッシュ。"
 TIPS_TWO_PLAYER_CONTROLS = "P1 は WASD と左Shift。P2 は矢印キーと右Shift。"
+
+# スマホ縦画面（論理解像度。コートは横画面の描画を90度回して載せる）
+MOBILE_W = 540
+MOBILE_H = 960
+MOBILE_HUD_H = 80
+MOBILE_ARENA_Y = MOBILE_HUD_H
+MOBILE_ARENA_CROP_TOP = SCREEN_H - MOBILE_W
+MOBILE_UI_BUTTON_SIZE = 28
+MOBILE_UI_RESULT_SIZE = 44
+
+# フリック操作（速度・距離は縦画面の論理px）
+STICK_DEADZONE = 14.0
+STICK_RADIUS = 60.0
+FLICK_SPEED = 1100.0
+FLICK_MIN_DISTANCE = 36.0
+FLICK_SAMPLE_WINDOW = 0.08
+FLICK_RELEASE_WINDOW = 0.18
+FLICK_DASH_DURATION = 0.28
+
+MOBILE_HELP_LINES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ルール", ("葉っぱを相手のゴールへ。先に3点で勝ち。",)),
+    ("這う", ("指を置いて、行きたい方へなぞる。", "なぞっている間は這い、跡が体節の壁になる。")),
+    ("ダッシュ", ("素早くフリック。その方向へ一気に進む。", "体節は出ず、壁もすり抜ける。")),
+    ("貫通", ("ダッシュで打った葉っぱは、", "直後だけ相手の体節を突き抜ける。")),
+    ("2人対戦", ("1台を挟んで、画面の下半分と上半分で", "それぞれ操作する。")),
+)

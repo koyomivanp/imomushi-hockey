@@ -276,10 +276,11 @@ class Match:
 
     def handle_input(
         self,
-        keys: pygame.key.ScancodeWrapper,
+        keys: pygame.key.ScancodeWrapper | None,
         dt: float,
         now: float,
         cpu_ai: "CPUAI | None" = None,
+        external_moves: dict[int, tuple[float, float, bool]] | None = None,
     ) -> None:
         if self.state == GameState.TITLE:
             return
@@ -299,6 +300,9 @@ class Match:
                 dx, dy, dash = cpu_ai.decide(
                     paddle, self.paddles[0], self.pucks, self.fences, now, self.pucks_frozen,
                 )
+                paddle.is_dashing = dash and bool(dx or dy)
+            elif external_moves is not None:
+                dx, dy, dash = external_moves.get(i, (0.0, 0.0, False))
                 paddle.is_dashing = dash and bool(dx or dy)
             else:
                 for key, (kx, ky) in controls[i].items():
