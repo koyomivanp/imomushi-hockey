@@ -24,7 +24,7 @@ from constants import (
     PB_SUN,
     PB_WHITE,
 )
-from mobile_art import palette, text, text_fit
+from mobile_art import palette, text_fit
 
 GRAVITY = 420.0
 MAX_PARTICLES = 150

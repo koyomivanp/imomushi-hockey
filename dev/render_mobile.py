@@ -18,7 +18,6 @@ import pygame
 
 import tuning
 from constants import MOBILE_H, MOBILE_W
-from entities import Fence
 from game import GameState
 from mobile_main import MobileGame, draw_frame
 from result_flow import ResultPhase

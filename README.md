@@ -166,12 +166,25 @@ PC で動作だけ確認するなら `python mobile_main.py`（マウスで操�
 | `sprites.py` | 葉っぱスプライト読み込み |
 | `constants.py` | 定数・バージョン |
 | `mobile_main.py` | スマホ版のエントリ・入力・進行 |
-| `mobile_view.py` | スマホ版の縦画面描画 |
+| `mobile_view.py` | スマホ版の縦画面の画面構成 |
+| `mobile_art.py` | スマホ版の絵（絵本の庭・芋虫・てんとう虫） |
+| `mobile_fx.py` | スマホ版の演出（花びら・土ぼこり・サナギと蝶） |
+| `tuning.py` | 実行時の寸法（スマホ版だけ太くする） |
 | `touch_input.py` | フリック操作の判定 |
 | `settings.py` | 設定の読み書き |
 | `dev/render_screens.py` | 画面 PNG 出力・レイアウト検証 |
 | `dev/test_gameplay.py` | 回帰テスト |
 | `dev/sim_cpu_balance.py` | CPU の挙動計測 |
+
+## フォント
+
+| フォント | 用途 | ライセンス |
+|----------|------|------------|
+| [Zen Maru Gothic](https://fonts.google.com/specimen/Zen+Maru+Gothic) | PC版・スマホ版の全文字 | [SIL Open Font License 1.1](https://scripts.sil.org/OFL) |
+
+スマホ版の「絵本の庭」デザインは Mochiy Pop One を想定していましたが、
+この環境から Google Fonts へ接続できず同梱できませんでした。
+丸ゴシックで雰囲気の近い同梱済みの Zen Maru Gothic を使っています。
 
 ## ライセンス
 

@@ -23,6 +23,12 @@ TEMPLATE = ROOT / "dev" / "web_template.tmpl"
 BGM_TRACKS = ("bgm_title", "bgm_battle")
 AUDIO_BITRATE = "96k"
 EXCLUDED_PY = {"main.py", "mobile_main.py"}
+# スマホ版は盤面も虫も手描き（mobile_art.py）なので、PC版の重い画像は配布しない
+EXCLUDED_ASSET_DIRS = {"arena", "sprites"}
+# Medium は無ければ Bold に落ちる。スマホの読み込みを軽くするため 1 本だけ配る
+EXCLUDED_ASSET_FILES = {"ZenMaruGothic-Medium.ttf"}
+# favicon は同梱のものを渡す（pygbag の既定は CDN から取りに行き、オフラインだと止まる）
+FAVICON = ROOT / "assets" / "web" / "favicon.png"
 
 
 def _stage(stage: Path) -> None:
@@ -30,11 +36,14 @@ def _stage(stage: Path) -> None:
         if path.name not in EXCLUDED_PY:
             shutil.copy2(path, stage / path.name)
     shutil.copy2(ROOT / "mobile_main.py", stage / "main.py")
-    shutil.copytree(
-        ROOT / "assets",
-        stage / "assets",
-        ignore=lambda _dir, names: [n for n in names if n.lower().endswith((".md", ".txt", ".wav", ".mp3"))],
-    )
+    def _skip(dir_path, names):
+        skipped = [n for n in names if n.lower().endswith((".md", ".txt", ".wav", ".mp3"))]
+        skipped += [n for n in names if n in EXCLUDED_ASSET_FILES]
+        if Path(dir_path) == ROOT / "assets":
+            skipped += [n for n in names if n in EXCLUDED_ASSET_DIRS]
+        return skipped
+
+    shutil.copytree(ROOT / "assets", stage / "assets", ignore=_skip)
     sounds = ROOT / "assets" / "sounds"
     sources = [sounds / f"{track}.mp3" for track in BGM_TRACKS]
     sources += [path for path in sorted(sounds.glob("*.wav")) if path.stem not in BGM_TRACKS]
@@ -64,6 +73,7 @@ def main() -> int:
                 "--title", "芋虫ホッケー", "--app_name", "imomushi-hockey",
                 "--width", "540", "--height", "960",
                 "--template", str(TEMPLATE),
+                "--icon", str(FAVICON),
                 str(stage / "main.py"),
             ],
             check=True,

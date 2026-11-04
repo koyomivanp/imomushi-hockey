@@ -25,7 +25,6 @@ from constants import (
     PB_P2,
     PB_PINK,
     PB_SUN,
-    PB_WHITE,
     TITLE_CATCH_COPY,
 )
 from game import GameState
@@ -197,7 +196,10 @@ def draw_worm(surf: pygame.Surface, match, player: int, now: float, offset: tupl
 
     max_gap = tuning.trail_max_gap() * 1.35
     for i, chain in enumerate(chains):
-        pts = [(*map(sum, zip(logic_to_screen(x, y), (ox, oy))), radius) for x, y in chain]
+        pts = []
+        for x, y in chain:
+            sx, sy = logic_to_screen(x, y)
+            pts.append((sx + ox, sy + oy, radius))
         newest = chain[-1]
         if (
             i == len(chains) - 1

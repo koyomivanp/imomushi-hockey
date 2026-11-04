@@ -210,10 +210,10 @@ def _draw_goal_arch(surf: pygame.Surface, x0: int, x1: int, y: int, color, *, up
     """ゴールは花びらのアーチ。広場の外側にふくらむ"""
     cx = (x0 + x1) / 2
     half = (x1 - x0) / 2
-    depth = 52
+    depth = 46
     sign = -1 if up else 1
     petals = 5
-    pr = half / 2.4
+    pr = half / 2.6
     base_y = y
     for pass_color, pad in ((PB_INK, PB_OUTLINE_W), (color, 0)):
         for px, py in _petal_arc(cx, base_y, half - pr * 0.75, petals, math.pi, math.tau):
@@ -309,11 +309,11 @@ def dash_tail_points(x: float, y: float, heading: float, radius: float, phase: f
     pts: list[tuple[float, float, float]] = []
     fx, fy = math.cos(heading), math.sin(heading)
     px, py = -fy, fx
-    length = radius * 3.4
+    length = radius * 3.9
     for i in range(7):
         t = i / 6
-        wave = math.sin(phase * 17.0 - t * 5.2) * radius * 0.30 * t
-        r = radius * (1.0 - 0.52 * t * t)
+        wave = math.sin(phase * 19.0 - t * 5.4) * radius * 0.42 * t
+        r = radius * (1.0 - 0.46 * t * t)
         pts.append((x - fx * length * t + px * wave, y - fy * length * t + py * wave, r))
     pts.reverse()
     return pts
