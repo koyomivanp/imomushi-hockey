@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import pygame
 
 from caterpillar_art import LEAF_BODY, LEAF_EDGE, draw_leaf_puck
+import tuning
 from constants import (
     GOAL_SCORE_DEPTH,
     PUCK_NEON_HEAT,
@@ -187,7 +188,7 @@ class PuckResetAnim:
 
     def draw(self, surf: pygame.Surface, now: float) -> None:
         fade_in = min(1.0, self.progress * 2.5)
-        radius = PUCK_RADIUS * self.scale
+        radius = tuning.puck_radius() * self.scale
         self.rotation += 0.08
         if fade_in < 0.98:
             glow_r = int(radius * 1.5)

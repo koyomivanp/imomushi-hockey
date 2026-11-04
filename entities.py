@@ -40,6 +40,7 @@ from caterpillar_art import (
     lerp_angle,
 )
 from sprites import draw_leaf_sprite
+import tuning
 
 
 def clamp_speed(vx: float, vy: float, max_speed: float = PUCK_MAX_SPEED) -> tuple[float, float]:
@@ -136,7 +137,7 @@ class Puck:
 
     @property
     def radius(self) -> float:
-        return PUCK_RADIUS
+        return tuning.puck_radius()
 
     @property
     def color(self) -> tuple:
@@ -179,8 +180,7 @@ class Paddle:
     prev_y: float = 0.0
 
     def base_radius(self) -> float:
-        axis = TABLE_H if PADDLE_SIZE_AXIS == "height" else TABLE_W
-        return axis * PADDLE_WIDTH_RATIO / 2
+        return tuning.body_radius()
 
     def radius(self, now: float) -> float:
         return self.base_radius()

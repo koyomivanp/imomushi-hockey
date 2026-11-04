@@ -4,6 +4,7 @@ import math
 import random
 from typing import Optional
 
+import tuning
 from constants import (
     ELASTICITY,
     FENCE_BOOST,
@@ -787,7 +788,7 @@ def _apply_rally_escalation(puck: Puck) -> None:
 
 
 def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> tuple[bool, bool]:
-    hw = fence.half_width if fence.half_width > 0 else FENCE_HALF_WIDTH
+    hw = fence.half_width if fence.half_width > 0 else tuning.fence_half_width()
     breach = _should_breach_fence(puck, fence, now)
     boost = FENCE_BREACH_BOOST if breach else FENCE_BOOST
     hit = resolve_puck_line(

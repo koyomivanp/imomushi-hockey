@@ -5,6 +5,7 @@ from enum import Enum, auto
 
 import pygame
 
+import tuning
 from constants import (
     COUNTDOWN_START,
     GO_DISPLAY_DURATION,
@@ -403,7 +404,7 @@ class Match:
             return False
         lifetime = self._trail_lifetime(paddle, x1, y1, x2, y2)
         owner_fences = [f for f in self.fences if f.owner == paddle.player]
-        while len(owner_fences) >= TRAIL_WALL_MAX_PER_PLAYER:
+        while len(owner_fences) >= tuning.trail_wall_max():
             oldest = min(owner_fences, key=lambda f: f.created_at)
             self.fences.remove(oldest)
             owner_fences.remove(oldest)
@@ -415,7 +416,7 @@ class Match:
             y2=y2,
             until=now + lifetime,
             created_at=now,
-            half_width=FENCE_HALF_WIDTH,
+            half_width=tuning.fence_half_width(),
         ))
         paddle.trail_spawn_until = now + TRAIL_SPAWN_COOLDOWN
         if self.audio is not None:
@@ -442,12 +443,12 @@ class Match:
             dy = paddle.y - paddle.trail_y
             dist = math.hypot(dx, dy)
 
-            if dist >= TRAIL_MAX_GAP:
+            if dist >= tuning.trail_max_gap():
                 paddle.trail_x = paddle.x
                 paddle.trail_y = paddle.y
                 continue
 
-            if dist >= TRAIL_SEGMENT_INTERVAL and now >= paddle.trail_spawn_until:
+            if dist >= tuning.trail_segment_interval() and now >= paddle.trail_spawn_until:
                 if self._spawn_trail_segment(
                     paddle, paddle.trail_x, paddle.trail_y, paddle.x, paddle.y, now,
                 ):
