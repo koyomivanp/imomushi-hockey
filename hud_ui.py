@@ -7,7 +7,10 @@ import math
 import pygame
 
 from constants import (
+    HUD_CPU_SHORT,
     HUD_H,
+    HUD_P1_SHORT,
+    HUD_P2_SHORT,
     HUD_PLAQUE_H,
     HUD_PLAQUE_TOP,
     LOGO_FILL,
@@ -17,13 +20,14 @@ from constants import (
     P2_COLOR,
     SCORE_BAR_FULL_PULSE_DURATION,
     SCORE_POP_DURATION,
+    SCREEN_H,
     SCREEN_W,
     WIN_SCORE,
 )
 from effects import score_segment_glow_strength, score_segment_light_progress
 from entities import arena_frame_rect
 from result_flow import ResultPhase, bar_full_overshoot
-from title_typography import TitleFonts
+from title_typography import TitleFonts, render_ui_outlined
 
 _GAUGE_CENTER_GAP = 10
 _SLOT_OFF = (12, 20, 14)
@@ -219,6 +223,43 @@ def _gauge_fill_ratio(
     return prev + (target - prev) * t
 
 
+def _draw_gauge_ticks(
+    surf: pygame.Surface,
+    gauges: tuple[pygame.Rect, pygame.Rect],
+) -> None:
+    """得点の区切り（先取点数ぶんに等分）"""
+    for rect in gauges:
+        slot = rect.inflate(-2, -4)
+        for i in range(1, WIN_SCORE):
+            x = slot.left + slot.width * i // WIN_SCORE
+            pygame.draw.line(surf, _BARK, (x, slot.top + 1), (x, slot.bottom - 2), 3)
+            pygame.draw.line(surf, _BEAM_TOP, (x, slot.top + 1), (x, slot.bottom - 2), 1)
+
+
+def _draw_gauge_labels(
+    surf: pygame.Surface,
+    gauges: tuple[pygame.Rect, pygame.Rect],
+    font: pygame.font.Font,
+    *,
+    vs_cpu: bool,
+) -> None:
+    p1 = render_ui_outlined(HUD_P1_SHORT, font, LOGO_FILL, outline=_BARK, outline_px=2)
+    surf.blit(p1, p1.get_rect(midleft=(gauges[0].left + 10, gauges[0].centery)))
+    p2_text = HUD_CPU_SHORT if vs_cpu else HUD_P2_SHORT
+    p2 = render_ui_outlined(p2_text, font, LOGO_FILL, outline=_BARK, outline_px=2)
+    surf.blit(p2, p2.get_rect(midright=(gauges[1].right - 10, gauges[1].centery)))
+
+
+def draw_bgm_muted_badge(surf: pygame.Surface, font: pygame.font.Font) -> None:
+    """BGM オフの表示 — 右下（コート枠の通行不可帯の上）"""
+    text = render_ui_outlined("BGM OFF", font, LOGO_FILL, outline=_BARK, outline_px=2)
+    rect = text.get_rect(bottomright=(SCREEN_W - 14, SCREEN_H - 8))
+    pill = pygame.Surface((rect.width + 12, rect.height + 4), pygame.SRCALPHA)
+    pygame.draw.rect(pill, (*MENU_BG, 190), pill.get_rect(), border_radius=6)
+    surf.blit(pill, (rect.left - 6, rect.top - 2))
+    surf.blit(text, rect)
+
+
 def draw_score_gauges(
     surf: pygame.Surface,
     s0: int,
@@ -284,7 +325,6 @@ def draw_match_hud(
     *,
     bgm_muted: bool = False,
 ) -> None:
-    _ = fonts, bgm_muted
     bar = _hud_bar_rect()
     gauges = _gauge_halves(bar)
 
@@ -305,6 +345,8 @@ def draw_match_hud(
         result_phase=result_phase,
         result_phase_progress=getattr(match, "result_phase_progress", 0.0),
     )
+    _draw_gauge_ticks(surf, gauges)
+    _draw_gauge_labels(surf, gauges, fonts.hud_label, vs_cpu=getattr(match, "vs_cpu", False))
 
     frame = arena_frame_rect()
     if frame.top > bar.bottom:
@@ -312,6 +354,9 @@ def draw_match_hud(
         for px in (bar.left + 3, bar.right - 5):
             pygame.draw.rect(surf, (48, 34, 22), (px, bar.bottom, 4, post_h))
             pygame.draw.line(surf, MENU_BORDER, (px + 1, bar.bottom), (px + 1, bar.bottom + post_h), 1)
+
+    if bgm_muted:
+        draw_bgm_muted_badge(surf, fonts.hud_meta)
 
 
 draw_score_segments = draw_score_gauges

@@ -37,6 +37,7 @@ from entities import Paddle, Puck, playable_rect
 from game import GameState, Match
 from physics import resolve_puck_paddle, resolve_puck_wall
 from result_flow import ResultPhase
+from settings import Settings, load_settings, save_settings, settings_path
 
 FRAME_MS = 16
 
@@ -304,8 +305,7 @@ class MainLoopTests(unittest.TestCase):
         def script(d: MainDriver):
             yield from start_two_player(d)
             d.post(pygame.WINDOWFOCUSLOST)
-            yield
-            yield
+            yield from wait(0.4)
             seen["state"] = d.match.state
 
         MainDriver().run(script)
@@ -346,6 +346,171 @@ class MainLoopTests(unittest.TestCase):
         MainDriver().run(script)
         self.assertEqual(seen.get("countdown"), 3, "3・2・1 の全てで音が鳴らない")
         self.assertEqual(seen.get("start"), 1)
+
+
+    def test_rematch_veil_has_no_flash(self) -> None:
+        """再戦の暗転 → 明転で暗さが飛ばない（明るいコートが一瞬見えない）"""
+        covers: list[float] = []
+
+        def script(d: MainDriver):
+            yield from start_two_player(d)
+            yield from force_result(d)
+            d.press(pygame.K_SPACE)
+            yield
+            while d.match.state == GameState.PREP:
+                covers.append(d.match.prep_darkness * (1.0 - d.match.prep_reveal))
+                yield
+
+        MainDriver().run(script)
+        self.assertGreater(max(covers), 0.95)
+        jumps = [abs(b - a) for a, b in zip(covers, covers[1:])]
+        self.assertLess(max(jumps), 0.2, "暗転の途中で暗さが飛んだ")
+
+    def test_go_is_shown_when_play_starts(self) -> None:
+        seen: dict[str, float] = {}
+
+        def script(d: MainDriver):
+            yield from start_two_player(d)
+            seen["start"] = d.match.go_timer
+            yield from wait(1.0)
+            seen["later"] = d.match.go_timer
+
+        MainDriver().run(script)
+        self.assertGreater(seen["start"], 0.0)
+        self.assertEqual(seen["later"], 0.0)
+
+    def test_short_focus_blink_does_not_pause(self) -> None:
+        """フルスクリーン切替などの一瞬のフォーカス喪失では止めない"""
+        seen: dict[str, object] = {}
+
+        def script(d: MainDriver):
+            yield from start_two_player(d)
+            d.post(pygame.WINDOWFOCUSLOST)
+            yield
+            d.post(pygame.WINDOWFOCUSGAINED)
+            yield from wait(0.5)
+            seen["state"] = d.match.state
+
+        MainDriver().run(script)
+        self.assertEqual(seen.get("state"), GameState.PLAYING)
+
+    def test_difficulty_survives_return_to_title(self) -> None:
+        seen: dict[str, int] = {}
+
+        def script(d: MainDriver):
+            yield
+            d.press(pygame.K_SPACE)
+            yield from wait(1.2)
+            d.press(pygame.K_3)
+            yield
+            d.press(pygame.K_SPACE)
+            yield from wait_for_state(d, GameState.PLAYING)
+            d.press(pygame.K_p)
+            yield
+            d.press(pygame.K_ESCAPE)
+            yield
+            yield
+            self.assertEqual(d.match.state, GameState.TITLE)
+            seen["index"] = d.match.cpu_diff_index
+
+        MainDriver().run(script)
+        save_settings(Settings())
+        self.assertEqual(seen.get("index"), 0)
+
+    def test_settings_are_restored_and_saved(self) -> None:
+        save_settings(Settings(bgm_muted=True, cpu_difficulty="hard"))
+        seen: dict[str, object] = {}
+
+        def script(d: MainDriver):
+            yield
+            seen["muted"] = d.audio.bgm_muted
+            seen["index"] = d.match.cpu_diff_index
+            d.press(pygame.K_m)
+            yield
+            yield
+            seen["saved_muted"] = load_settings().bgm_muted
+            d.press(pygame.K_f)
+            yield
+            yield
+            seen["saved_fullscreen"] = load_settings().fullscreen
+            d.press(pygame.K_f)
+            yield
+            yield
+
+        MainDriver().run(script)
+        save_settings(Settings())
+        self.assertIs(seen.get("muted"), True)
+        self.assertEqual(seen.get("index"), 2)
+        self.assertIs(seen.get("saved_muted"), False)
+        self.assertIs(seen.get("saved_fullscreen"), True)
+
+
+class SettingsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.saved_dir = os.environ["IMOMUSHI_SETTINGS_DIR"]
+        self.dir = tempfile.mkdtemp(prefix="imomushi_settings_")
+        os.environ["IMOMUSHI_SETTINGS_DIR"] = self.dir
+
+    def tearDown(self) -> None:
+        os.environ["IMOMUSHI_SETTINGS_DIR"] = self.saved_dir
+
+    def _write(self, text: str) -> None:
+        settings_path().write_text(text, encoding="utf-8")
+
+    def test_missing_file_uses_defaults(self) -> None:
+        self.assertEqual(load_settings(), Settings())
+
+    def test_broken_json_uses_defaults(self) -> None:
+        for text in ("{broken", "[1, 2]", "null", ""):
+            self._write(text)
+            self.assertEqual(load_settings(), Settings(), text)
+
+    def test_binary_garbage_uses_defaults(self) -> None:
+        settings_path().write_bytes(b"\xff\xfe\x00garbage")
+        self.assertEqual(load_settings(), Settings())
+
+    def test_invalid_values_are_ignored(self) -> None:
+        self._write('{"bgm_muted": "yes", "fullscreen": 1, "cpu_difficulty": "impossible"}')
+        self.assertEqual(load_settings(), Settings())
+
+    def test_unhashable_difficulty_is_ignored(self) -> None:
+        self._write('{"cpu_difficulty": ["hard"]}')
+        self.assertEqual(load_settings(), Settings())
+
+    def test_round_trip(self) -> None:
+        settings = Settings(bgm_muted=True, fullscreen=True, cpu_difficulty="easy")
+        self.assertTrue(save_settings(settings))
+        self.assertEqual(load_settings(), settings)
+
+    def test_unwritable_location_returns_false(self) -> None:
+        blocker = os.path.join(self.dir, "not_a_dir")
+        with open(blocker, "w", encoding="utf-8") as f:
+            f.write("x")
+        os.environ["IMOMUSHI_SETTINGS_DIR"] = os.path.join(blocker, "child")
+        self.assertFalse(save_settings(Settings()))
+
+
+class AudioCacheTests(unittest.TestCase):
+    def test_trail_sound_is_not_regenerated(self) -> None:
+        pygame.init()
+        audio = game_main.SoundManager()
+        played = []
+        audio._play = lambda sound, volume=1.0: played.append(sound)
+        for i in range(6):
+            audio.play_trail_crawl(float(i))
+        self.assertEqual(len({id(s) for s in played}), 2)
+
+
+class CpuOwnGoalTests(unittest.TestCase):
+    def test_hard_cpu_routes_around_puck(self) -> None:
+        """葉っぱより相手側にいる hard CPU は真っすぐ突っ込まない"""
+        ai = CPUAI("hard")
+        rect = playable_rect()
+        puck = Puck(x=rect.centerx + 120, y=rect.centery)
+        paddle = Paddle(player=1, x=rect.centerx + 40, y=rect.centery)
+        target = ai._route_behind_puck(paddle, puck, (puck.x + 35, puck.y), 0.0)
+        self.assertGreater(abs(target[1] - puck.y), paddle.radius(0.0) + puck.radius)
+        self.assertGreater(target[0], puck.x)
 
 
 class CpuDashTests(unittest.TestCase):

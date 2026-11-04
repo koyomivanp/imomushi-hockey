@@ -13,6 +13,7 @@ P2_LABEL = "P2芋虫"
 SCREEN_W = 800
 SCREEN_H = 600
 FPS = 60
+FOCUS_PAUSE_DELAY = 0.2
 MAX_FRAME_DT = 0.05  # ウィンドウのドラッグ等で dt が跳ねても葉っぱが飛ばない上限
 
 # 色 — 森テーマ × 芋虫パレット（タイトル/HUD と統一）
@@ -149,6 +150,7 @@ RALLY_BOUNCE_MAX_MULT = 1.35
 
 # カウントダウン
 COUNTDOWN_START = 3
+GO_DISPLAY_DURATION = 0.6
 
 # タイトル（深い森）
 MENU_BG = (14, 28, 18)
@@ -206,12 +208,13 @@ TITLE_MENU_H = 40
 TITLE_MENU_GAP = 4
 TITLE_MENU_TOP = 442
 TITLE_MENU_ZONE_Y = 438
+TITLE_HINT_TEXT = "↑↓: 選択    Space: 決定    H: 遊び方    M: BGM    F: フルスクリーン"
 
 TIPS_COMMON: tuple[str, ...] = (
     "葉っぱを相手ゴールへ。先取3点で勝利。",
     "這い移動で体節が壁に。古いものから消えていく。",
-    "Shift+移動でダッシュ。体節なし・壁すり抜け。",
-    "ダッシュで葉っぱを打った直後だけ、体節を貫通。",
+    "Shift+移動でダッシュ。体節を残さず、葉っぱを強く打てる。",
+    "ダッシュで打った直後の葉っぱは、相手の体節を貫通する。",
 )
 TIPS_CPU_CONTROLS = "WASD で移動。Shift は左右どちらでもダッシュ。"
-TIPS_TWO_PLAYER_CONTROLS = "P1 は WASD。P2 は矢印キー。"
+TIPS_TWO_PLAYER_CONTROLS = "P1 は WASD と左Shift。P2 は矢印キーと右Shift。"
