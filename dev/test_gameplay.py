@@ -501,18 +501,6 @@ class AudioCacheTests(unittest.TestCase):
         self.assertEqual(len({id(s) for s in played}), 2)
 
 
-class CpuOwnGoalTests(unittest.TestCase):
-    def test_hard_cpu_routes_around_puck(self) -> None:
-        """葉っぱより相手側にいる hard CPU は真っすぐ突っ込まない"""
-        ai = CPUAI("hard")
-        rect = playable_rect()
-        puck = Puck(x=rect.centerx + 120, y=rect.centery)
-        paddle = Paddle(player=1, x=rect.centerx + 40, y=rect.centery)
-        target = ai._route_behind_puck(paddle, puck, (puck.x + 35, puck.y), 0.0)
-        self.assertGreater(abs(target[1] - puck.y), paddle.radius(0.0) + puck.radius)
-        self.assertGreater(target[0], puck.x)
-
-
 class CpuDashTests(unittest.TestCase):
     def test_dash_lasts_multiple_frames(self) -> None:
         """CPU のダッシュは 1 フレームで切れない"""

@@ -50,9 +50,10 @@ class ReferenceBot:
         if now >= self.next_update:
             self.next_update = now + self.reaction
             jitter = random.uniform(-14.0, 14.0)
-            if puck.x < paddle.x:
-                # 葉っぱが自ゴール側にある — 背後へ戻る
-                self.target = (puck.x - 60.0, puck.y + jitter)
+            if puck.x < paddle.x + 6.0:
+                # 葉っぱが自ゴール側にある — 横から背後へ回り込む
+                side = 1.0 if paddle.y >= puck.y else -1.0
+                self.target = (puck.x - 60.0, puck.y + side * 60.0)
             else:
                 self.target = (puck.x - 20.0, puck.y + jitter)
             self.dash = random.random() < self.dash_rate
@@ -80,6 +81,7 @@ def play_match(difficulty: str, bot: ReferenceBot) -> dict:
     }
     current_run = 0
     last_toucher = -1
+    last_touch_vx = 0.0
     last_touch_times = {0: 0.0, 1: 0.0}
     last_cross = 0.0
     last_side = 0
@@ -103,6 +105,7 @@ def play_match(difficulty: str, bot: ReferenceBot) -> dict:
                 if touched_at != last_touch_times[player]:
                     last_touch_times[player] = touched_at
                     last_toucher = player
+                    last_touch_vx = puck.vx
                     if player == 1 and cpu.is_dashing:
                         stats["dash_hits"] += 1
             stats["max_speed"] = max(stats["max_speed"], math.hypot(puck.vx, puck.vy))
@@ -115,9 +118,10 @@ def play_match(difficulty: str, bot: ReferenceBot) -> dict:
             stats["goals"] += 1
             if match.scores[0] > before[0]:
                 stats["conceded"] += 1
-                if last_toucher == 1:
+                # 触った直後に自ゴール方向へ飛んだものだけ自殺点と数える
+                if last_toucher == 1 and last_touch_vx > 0.0:
                     stats["own_goals"] += 1
-            if match.scores[1] > before[1] and last_toucher == 0:
+            if match.scores[1] > before[1] and last_toucher == 0 and last_touch_vx < 0.0:
                 stats["bot_own_goals"] += 1
             last_toucher = -1
             last_touch_times = {0: 0.0, 1: 0.0}
