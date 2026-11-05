@@ -1,59 +1,58 @@
 """スマホ版エントリ — 縦画面・タッチ操作（Web 版ではビルド時に main.py として配置）"""
 
 import asyncio
-import time
+import math
 
 import pygame
 
-from ai import CPUAI, CPU_DIFFICULTY_ORDER
-from arena_assets import init_arena_assets
-from audio import SoundManager
-from constants import (
+import tuning
+
+tuning.use_mobile_scale()  # 当たり判定と見た目の寸法をスマホ用に（PC版は変えない）
+
+from ai import CPUAI, CPU_DIFFICULTY_ORDER  # noqa: E402
+from audio import SoundManager  # noqa: E402
+from constants import (  # noqa: E402
     FPS,
     GAME_TITLE,
     MAX_FRAME_DT,
     MOBILE_H,
-    MOBILE_UI_BUTTON_SIZE,
-    MOBILE_UI_RESULT_SIZE,
+    MOBILE_HITSTOP_DURATION,
+    MOBILE_SHAKE_AMPLITUDE,
+    MOBILE_SHAKE_DURATION,
+    MOBILE_STRONG_HIT_GAIN,
+    MOBILE_STRONG_HIT_SPEED,
     MOBILE_W,
-    SCREEN_H,
-    SCREEN_W,
     SOUND_ENABLED,
 )
-from game import GameState, Match
-from mobile_view import (
-    blit_cached_screen,
-    draw_arena,
+from game import GameState, Match  # noqa: E402
+from mobile_fx import MobileFX, VictoryButterfly  # noqa: E402
+from mobile_view import (  # noqa: E402
     draw_countdown,
     draw_help,
-    draw_hud,
+    draw_match,
     draw_pause,
     draw_result,
+    draw_score,
     draw_title,
+    goal_screen_pos,
     help_buttons,
     hit_button,
+    logic_heading_to_screen,
+    logic_to_screen,
     pause_button_rect,
     pause_buttons,
     result_buttons,
     screen_dir_to_logic,
     title_buttons,
 )
-from result_flow import ResultPhase
-from settings import load_settings, save_settings
-from sprites import init_sprites
-from title_typography import _load_font, load_title_fonts
-from touch_input import TouchControls
-from visuals import make_window_icon
+from result_flow import ResultPhase  # noqa: E402
+from settings import load_settings, save_settings  # noqa: E402
+from sprites import init_sprites  # noqa: E402
+from touch_input import TouchControls  # noqa: E402
+from visuals import make_window_icon  # noqa: E402
 
 MOUSE_FINGER = -1
-
-
-class UIFonts:
-    def __init__(self) -> None:
-        self.button = _load_font(MOBILE_UI_BUTTON_SIZE)
-        self.result = _load_font(MOBILE_UI_RESULT_SIZE)
-        self.body = _load_font(24)
-        self.small = _load_font(21, medium=True)
+DASH_PUFF_INTERVAL = 0.045
 
 
 class MobileGame:
@@ -65,17 +64,29 @@ class MobileGame:
         self.match = Match(audio=audio, cpu_diff_index=self.settings.cpu_diff_index)
         self.cpu_ai = CPUAI(self.settings.cpu_difficulty)
         self.controls = TouchControls(MOBILE_H)
+        self.fx = MobileFX()
+        self.butterfly = VictoryButterfly()
         self.bgm_muted = False
         self.bgm_paused = False
         self.game_time = 0.0
         self.running = True
+        self.pressed_action: str | None = None
+        self.pressed_at = -10.0
+        self.pause_pop_at = -10.0
+        self.shake_timer = 0.0
+        self.hitstop_timer = 0.0
+        self._puck_speeds: list[float] = []
+        self._breach_marks: list[float] = []
+        self._prev_scores = (0, 0)
+        self._next_puff = 0.0
         if audio is not None and self.settings.bgm_muted:
             self.bgm_muted = audio.toggle_bgm_mute()
 
+    # --- UI ---
     def visible_buttons(self) -> list:
         state = self.match.state
         if state == GameState.TITLE:
-            return title_buttons(self.bgm_muted)
+            return title_buttons(self.bgm_muted, self.match.cpu_diff_index)
         if state == GameState.HELP:
             return help_buttons()
         if state == GameState.PAUSE:
@@ -90,6 +101,9 @@ class MobileGame:
         match.vs_cpu = vs_cpu
         match.enter_countdown()
         self.controls.reset()
+        self.fx.reset()
+        self.butterfly.active = False
+        self._prev_scores = (0, 0)
         if vs_cpu:
             self.cpu_ai.set_difficulty(CPU_DIFFICULTY_ORDER[match.cpu_diff_index])
             self.cpu_ai.reset()
@@ -98,7 +112,11 @@ class MobileGame:
         match = self.match
         if self.audio is not None:
             self.audio.play_menu_move()
-        if action.startswith("cpu:"):
+        if action.startswith("cpu_diff:"):
+            match.cpu_diff_index = int(action.split(":")[1])
+            self.settings.cpu_difficulty = CPU_DIFFICULTY_ORDER[match.cpu_diff_index]
+            save_settings(self.settings)
+        elif action.startswith("cpu:"):
             match.cpu_diff_index = int(action.split(":")[1])
             self.settings.cpu_difficulty = CPU_DIFFICULTY_ORDER[match.cpu_diff_index]
             save_settings(self.settings)
@@ -121,12 +139,16 @@ class MobileGame:
             self.start_match(vs_cpu=match.vs_cpu)
         elif action == "to_title":
             self.controls.reset()
+            self.fx.reset()
+            self.butterfly.active = False
             match.back_to_title()
 
+    # --- 入力 ---
     def on_press(self, finger: int, x: float, y: float) -> None:
         match = self.match
         if match.state in (GameState.PLAYING, GameState.COUNTDOWN):
             if pause_button_rect().collidepoint(x, y):
+                self.pause_pop_at = self.game_time
                 match.toggle_pause()
                 self.controls.reset()
                 return
@@ -134,6 +156,8 @@ class MobileGame:
             return
         action = hit_button(self.visible_buttons(), x, y)
         if action is not None:
+            self.pressed_action = action
+            self.pressed_at = self.game_time
             self.perform(action)
 
     def on_move(self, finger: int, x: float, y: float) -> None:
@@ -155,8 +179,61 @@ class MobileGame:
             moves[player] = (lx, ly, dash)
         return moves
 
+    # --- 進行 ---
+    def shake_offset(self) -> tuple[float, float]:
+        if self.shake_timer <= 0.0:
+            return 0.0, 0.0
+        k = self.shake_timer / MOBILE_SHAKE_DURATION
+        amp = MOBILE_SHAKE_AMPLITUDE * k * k
+        t = self.game_time
+        return math.sin(t * 61.0) * amp, math.sin(t * 47.0) * amp * 0.8
+
+    def _spawn_dash_puffs(self) -> None:
+        if self.game_time < self._next_puff:
+            return
+        for paddle in self.match.paddles:
+            if not paddle.is_dashing:
+                continue
+            sx, sy = logic_to_screen(paddle.x, paddle.y)
+            self.fx.puff_dash(sx, sy, logic_heading_to_screen(paddle.face_heading), paddle.player)
+        self._next_puff = self.game_time + DASH_PUFF_INTERVAL
+
+    def _watch_match_events(self) -> None:
+        match = self.match
+        scores = tuple(match.scores)
+        if scores != self._prev_scores:
+            scorer = 0 if scores[0] != self._prev_scores[0] else 1
+            x, y = goal_screen_pos(match)
+            self.fx.burst_goal(x, y, scorer)
+            self.shake_timer = MOBILE_SHAKE_DURATION
+            self._prev_scores = scores
+
+        speeds = []
+        marks = []
+        for i, puck in enumerate(match.pucks):
+            speed = math.hypot(puck.vx, puck.vy)
+            prev = self._puck_speeds[i] if i < len(self._puck_speeds) else speed
+            if speed >= MOBILE_STRONG_HIT_SPEED and speed - prev >= MOBILE_STRONG_HIT_GAIN:
+                self.shake_timer = MOBILE_SHAKE_DURATION
+                self.hitstop_timer = MOBILE_HITSTOP_DURATION
+            speeds.append(speed)
+            prev_mark = self._breach_marks[i] if i < len(self._breach_marks) else 0.0
+            if puck.breach_flash_until > prev_mark + 1e-6:
+                sx, sy = logic_to_screen(puck.x, puck.y)
+                self.fx.burst_shards(sx, sy, 1 - int(puck.vx > 0))
+            marks.append(puck.breach_flash_until)
+        self._puck_speeds = speeds
+        self._breach_marks = marks
+
+        if match.state == GameState.RESULT and match.winner is not None and not self.butterfly.active:
+            self.butterfly.start(match.winner, MOBILE_W / 2, 500)
+
     def step(self, dt: float) -> None:
         match = self.match
+        if self.hitstop_timer > 0.0:
+            # 強打の一瞬の停止（入力は受け続ける）
+            self.hitstop_timer -= dt
+            return
         if match.state != GameState.PAUSE:
             self.game_time += dt
         if match.state in (GameState.COUNTDOWN, GameState.PLAYING):
@@ -164,6 +241,12 @@ class MobileGame:
             match.handle_input(None, dt, self.game_time, cpu_ai=ai, external_moves=self.external_moves())
         if match.state not in (GameState.PAUSE, GameState.TITLE, GameState.HELP):
             match.update(dt, self.game_time)
+        if match.state != GameState.PAUSE:
+            self._watch_match_events()
+            self._spawn_dash_puffs()
+            self.fx.update(dt)
+            self.butterfly.update(dt)
+            self.shake_timer = max(0.0, self.shake_timer - dt)
         if self.audio is not None:
             if match.state == GameState.PAUSE and not self.bgm_paused:
                 self.audio.pause_bgm()
@@ -194,42 +277,43 @@ class MobileGame:
             self.on_release(MOUSE_FINGER, *event.pos)
 
 
-def draw_frame(screen, scratch, arena, game: MobileGame, title_fonts, ui_fonts, big_font, now: float) -> None:
+def draw_frame(screen: pygame.Surface, game: MobileGame, now: float) -> None:
+    """描画の時計は game.game_time と同じものを使う（体節の寿命判定とずれると消える）"""
     match = game.match
     buttons = game.visible_buttons()
-
-    def draw_match(surf: pygame.Surface) -> None:
-        draw_arena(surf, arena, match, now)
-        draw_hud(surf, match, ui_fonts, now)
-        draw_countdown(surf, match, big_font)
+    pressed = (game.pressed_action, game.pressed_at)
 
     if match.state == GameState.TITLE:
-        blit_cached_screen(
-            screen, ("title", match.cpu_diff_index, game.bgm_muted),
-            lambda surf: draw_title(
-                surf, title_fonts, ui_fonts, now, scratch, cpu_diff_index=match.cpu_diff_index, buttons=buttons,
-            ),
+        draw_title(
+            screen, now, cpu_diff_index=match.cpu_diff_index, buttons=buttons,
+            pressed_action=pressed[0], pressed_at=pressed[1],
         )
-    elif match.state == GameState.HELP:
-        blit_cached_screen(
-            screen, "help", lambda surf: draw_help(surf, title_fonts, ui_fonts, now, scratch, buttons),
+        return
+    if match.state == GameState.HELP:
+        draw_help(screen, now, buttons, pressed_action=pressed[0], pressed_at=pressed[1])
+        return
+
+    draw_match(screen, match, now, fx=game.fx, shake=game.shake_offset())
+    pause_pop = max(0.0, 1.0 - (now - game.pause_pop_at) / 0.25)
+    draw_score(screen, match, pause_pop=min(1.0, pause_pop))
+    draw_countdown(screen, match, now)
+    game.fx.draw_goal_text(screen)
+
+    if match.state == GameState.PAUSE:
+        draw_pause(screen, buttons, now, pressed_action=pressed[0], pressed_at=pressed[1])
+    elif match.state == GameState.RESULT:
+        draw_result(
+            screen, match, buttons, butterfly=game.butterfly, now=now,
+            pressed_action=pressed[0], pressed_at=pressed[1],
         )
-    elif match.state == GameState.PAUSE:
-        def build_pause(surf: pygame.Surface) -> None:
-            draw_match(surf)
-            draw_pause(surf, title_fonts, ui_fonts, buttons)
 
-        blit_cached_screen(screen, ("pause", game.game_time, game.bgm_muted), build_pause)
-    elif match.state == GameState.RESULT and match.result_phase == ResultPhase.HOLD:
-        def build_result(surf: pygame.Surface) -> None:
-            draw_match(surf)
-            draw_result(surf, match, title_fonts, ui_fonts, buttons)
 
-        blit_cached_screen(screen, ("result", tuple(match.scores), match.match_time), build_result)
-    else:
-        draw_match(screen)
-        if match.state == GameState.RESULT:
-            draw_result(screen, match, title_fonts, ui_fonts, [])
+def run_frame(screen: pygame.Surface, game: MobileGame, dt: float) -> None:
+    """main ループの1フレーム分。描画も game.game_time で行う（壁時計を混ぜない）"""
+    for event in pygame.event.get():
+        game.handle_event(event)
+    game.step(dt)
+    draw_frame(screen, game, game.game_time)
 
 
 async def main() -> None:
@@ -238,13 +322,7 @@ async def main() -> None:
     pygame.display.set_caption(GAME_TITLE)
     screen = pygame.display.set_mode((MOBILE_W, MOBILE_H))
     init_sprites()
-    init_arena_assets()
-    arena = pygame.Surface((SCREEN_W, SCREEN_H)).convert()
-    scratch = pygame.Surface((SCREEN_W, SCREEN_H)).convert()
     clock = pygame.time.Clock()
-    title_fonts = load_title_fonts()
-    ui_fonts = UIFonts()
-    big_font = _load_font(120)
 
     audio: SoundManager | None = None
     if SOUND_ENABLED:
@@ -255,14 +333,10 @@ async def main() -> None:
     game = MobileGame(audio)
     if audio is not None:
         audio.play_title_bgm()
-    start_time = time.perf_counter()
 
     while game.running:
         dt = min(clock.tick(FPS) / 1000.0, MAX_FRAME_DT)
-        for event in pygame.event.get():
-            game.handle_event(event)
-        game.step(dt)
-        draw_frame(screen, scratch, arena, game, title_fonts, ui_fonts, big_font, time.perf_counter() - start_time)
+        run_frame(screen, game, dt)
         pygame.display.flip()
         await asyncio.sleep(0)
 
