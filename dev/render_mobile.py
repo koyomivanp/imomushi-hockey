@@ -20,6 +20,7 @@ import tuning
 from constants import MOBILE_H, MOBILE_W
 from game import GameState
 from mobile_main import MobileGame, draw_frame
+from touch_input import dash_button_center
 from result_flow import ResultPhase
 from sprites import init_sprites
 
@@ -84,9 +85,7 @@ def main() -> int:
 
     # ダッシュ中
     game.fx.reset()
-    game.on_press(1, 200, 700)
-    game.step(DT)
-    game.on_move(1, 320, 700)
+    game.on_press(1, *dash_button_center(0))
     for _ in range(8):
         game.step(DT)
     shot("dash")

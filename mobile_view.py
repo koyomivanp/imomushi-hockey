@@ -39,6 +39,7 @@ from mobile_art import (
     draw_pill,
     draw_title_ladybug,
     draw_title_worm,
+    draw_touch_controls,
     draw_tube,
     logic_heading_to_screen,
     logic_to_screen,
@@ -206,7 +207,6 @@ def draw_worm(surf: pygame.Surface, match, player: int, now: float, offset: tupl
         newest = chain[-1]
         if (
             i == len(chains) - 1
-            and not paddle.is_dashing
             and math.hypot(newest[0] - paddle.x, newest[1] - paddle.y) <= max_gap
         ):
             pts.append((head_x, head_y, radius))
@@ -240,16 +240,35 @@ def draw_match(surf: pygame.Surface, match, now: float, fx=None, shake: tuple[fl
         fx.draw(surf)
 
 
-def draw_score(surf: pygame.Surface, match, *, pause_pop: float = 0.0) -> None:
+SCORE_BADGE_SIZE = 76
+
+_small_badge_cache: dict[tuple[int, int], pygame.Surface] = {}
+
+
+def _small_badge(player: int, score: int) -> pygame.Surface:
+    cached = _small_badge_cache.get((player, score))
+    if cached is None:
+        cached = pygame.transform.smoothscale(score_badge(player, score), (SCORE_BADGE_SIZE, SCORE_BADGE_SIZE))
+        _small_badge_cache[(player, score)] = cached
+    return cached
+
+
+def score_badge_centers() -> tuple[tuple[int, int], tuple[int, int]]:
+    """（下の人, 上の人）。葉っぱを隠さないよう、コートの外の帯に置く"""
     court = court_screen_rect()
-    top = score_badge(1, match.scores[1])
-    bottom = score_badge(0, match.scores[0])
-    surf.blit(top, top.get_rect(center=(66, court.top + 36)))
-    surf.blit(bottom, bottom.get_rect(center=(66, court.bottom - 36)))
+    return (52, court.bottom + 38), (52, court.top - 38)
+
+
+def draw_score(surf: pygame.Surface, match, *, pause_pop: float = 0.0) -> None:
+    bottom_center, top_center = score_badge_centers()
+    top = _small_badge(1, match.scores[1])
+    bottom = _small_badge(0, match.scores[0])
+    surf.blit(top, top.get_rect(center=top_center))
+    surf.blit(bottom, bottom.get_rect(center=bottom_center))
     label_top = text(CPU_LABEL if match.vs_cpu else "P2", 22, PB_INK)
     label_bottom = text("あなた" if match.vs_cpu else "P1", 22, PB_INK)
-    surf.blit(label_top, label_top.get_rect(center=(66, court.top - 26)))
-    surf.blit(label_bottom, label_bottom.get_rect(center=(66, court.bottom + 26)))
+    surf.blit(label_top, label_top.get_rect(midleft=(top_center[0] + 44, top_center[1])))
+    surf.blit(label_bottom, label_bottom.get_rect(midleft=(bottom_center[0] + 44, bottom_center[1])))
     draw_pause_button(surf, pause_button_rect(), pause_pop)
 
 

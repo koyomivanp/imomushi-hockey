@@ -34,6 +34,7 @@ from mobile_view import (  # noqa: E402
     draw_result,
     draw_score,
     draw_title,
+    draw_touch_controls,
     goal_screen_pos,
     help_buttons,
     hit_button,
@@ -48,7 +49,7 @@ from mobile_view import (  # noqa: E402
 from result_flow import ResultPhase  # noqa: E402
 from settings import load_settings, save_settings  # noqa: E402
 from sprites import init_sprites  # noqa: E402
-from touch_input import TouchControls  # noqa: E402
+from touch_input import TouchControls, dash_button_center, keyboard_output, pad_home  # noqa: E402
 from visuals import make_window_icon  # noqa: E402
 
 MOUSE_FINGER = -1
@@ -152,6 +153,7 @@ class MobileGame:
                 match.toggle_pause()
                 self.controls.reset()
                 return
+            self.controls.visible = True
             self.controls.press(finger, x, y, self.game_time, two_player=not match.vs_cpu)
             return
         action = hit_button(self.visible_buttons(), x, y)
@@ -175,6 +177,8 @@ class MobileGame:
         moves: dict[int, tuple[float, float, bool]] = {}
         for player, stick in enumerate(self.controls.sticks):
             dx, dy, dash = stick.output(self.game_time)
+            if not (dx or dy):
+                dx, dy, dash = keyboard_output(pygame.key.get_pressed(), player, two_player=not self.match.vs_cpu)
             lx, ly = screen_dir_to_logic(dx, dy)
             moves[player] = (lx, ly, dash)
         return moves
@@ -262,6 +266,13 @@ class MobileGame:
             self.running = False
         elif event.type == pygame.WINDOWFOCUSLOST:
             self.on_focus_lost()
+        elif event.type == pygame.KEYDOWN:
+            self.controls.visible = False
+            if event.key == pygame.K_ESCAPE and self.match.state in (
+                GameState.PLAYING, GameState.COUNTDOWN, GameState.PAUSE,
+            ):
+                self.controls.reset()
+                self.match.toggle_pause()
         elif event.type == pygame.FINGERDOWN:
             self.on_press(event.finger_id, event.x * MOBILE_W, event.y * MOBILE_H)
         elif event.type == pygame.FINGERMOTION:
@@ -295,6 +306,17 @@ def draw_frame(screen: pygame.Surface, game: MobileGame, now: float) -> None:
 
     draw_match(screen, match, now, fx=game.fx, shake=game.shake_offset())
     pause_pop = max(0.0, 1.0 - (now - game.pause_pop_at) / 0.25)
+    if game.controls.visible and match.state in (GameState.PLAYING, GameState.COUNTDOWN):
+        for player in (0,) if match.vs_cpu else (0, 1):
+            stick = game.controls.sticks[player]
+            draw_touch_controls(
+                screen,
+                player=player,
+                anchor=(stick.anchor_x, stick.anchor_y) if stick.finger is not None else pad_home(player),
+                knob=stick.knob_offset(),
+                dash_center=dash_button_center(player),
+                dash_active=stick.is_dash_active(now),
+            )
     draw_score(screen, match, pause_pop=min(1.0, pause_pop))
     draw_countdown(screen, match, now)
     game.fx.draw_goal_text(screen)
