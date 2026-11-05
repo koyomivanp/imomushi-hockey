@@ -29,14 +29,15 @@ from constants import (
     MOBILE_W,
     PADDLE_DASH_SPEED,
     PADDLE_SPEED,
+    PB_INK,
     PB_P1,
     PB_P2,
 )
 from entities import Fence, goal_score_bounds, playable_rect
 from game import GameState
-from mobile_art import court_screen_rect, logic_to_screen, scaled
+from mobile_art import court_screen_rect, draw_title_ladybug, draw_title_worm, logic_to_screen, scaled, text
 from mobile_main import MobileGame, draw_frame, run_frame
-from mobile_view import _chain_points, pause_button_rect, screen_dir_to_logic, title_buttons
+from mobile_view import CPU_LABEL, TITLE_DIFF_LABEL_Y, _chain_points, pause_button_rect, screen_dir_to_logic, title_buttons
 from result_flow import ResultPhase
 from touch_input import FlickStick, TouchControls
 
@@ -157,6 +158,16 @@ class PortraitMappingTest(unittest.TestCase):
         canvas = pygame.Rect(0, 0, MOBILE_W, MOBILE_H)
         for button in title_buttons(False):
             self.assertTrue(canvas.contains(button.rect), button.label)
+
+    def test_difficulty_label_is_not_hidden_on_title(self) -> None:
+        label = text(f"つよさ（vs {CPU_LABEL}）", 24, PB_INK).get_rect(center=(MOBILE_W // 2, TITLE_DIFF_LABEL_Y))
+        for button in title_buttons(False):
+            self.assertFalse(label.colliderect(button.rect), button.label)
+        for i in range(120):  # 芋虫とてんとう虫は波打つので、いろいろな時刻で確かめる
+            layer = pygame.Surface((MOBILE_W, MOBILE_H), pygame.SRCALPHA)
+            draw_title_worm(layer, i * 0.1)
+            draw_title_ladybug(layer, i * 0.1)
+            self.assertEqual(layer.subsurface(label).get_bounding_rect().size, (0, 0), f"t={i * 0.1:.1f}")
 
 
 class MobileGameTest(unittest.TestCase):

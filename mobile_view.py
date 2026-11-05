@@ -90,17 +90,20 @@ def _pill(y: int, label: str, action: str, *, h: int = 78, w: int = 420, fill=PB
 
 # --- 画面ごとのボタン ---
 
+TITLE_DIFF_LABEL_Y = 432  # 芋虫の下端より下、難易度ボタンより上に置く
+
+
 def title_buttons(bgm_muted: bool, cpu_diff_index: int = 1) -> list[Button]:
     w, gap, h = 150, 12, 66
     left = (MOBILE_W - (w * 3 + gap * 2)) // 2
     buttons = [
-        Button(pygame.Rect(left + i * (w + gap), 430, w, h), DIFFICULTIES[key].label, f"cpu_diff:{i}", size=27)
+        Button(pygame.Rect(left + i * (w + gap), 458, w, h), DIFFICULTIES[key].label, f"cpu_diff:{i}", size=27)
         for i, key in enumerate(CPU_DIFFICULTY_ORDER)
     ]
-    buttons.append(_pill(518, "CPU芋虫と対戦", f"cpu:{cpu_diff_index}", h=88, fill=PB_SUN, size=34))
-    buttons.append(_pill(622, "2匹で対戦", "two_player", h=78))
-    buttons.append(_pill(714, "遊び方", "help", h=66, w=320, size=28))
-    buttons.append(_pill(794, "BGM: オフ" if bgm_muted else "BGM: オン", "bgm", h=58, w=280, size=25))
+    buttons.append(_pill(546, "CPU芋虫と対戦", f"cpu:{cpu_diff_index}", h=88, fill=PB_SUN, size=34))
+    buttons.append(_pill(650, "2匹で対戦", "two_player", h=78))
+    buttons.append(_pill(742, "遊び方", "help", h=66, w=320, size=28))
+    buttons.append(_pill(822, "BGM: オフ" if bgm_muted else "BGM: オン", "bgm", h=58, w=280, size=25))
     return buttons
 
 
@@ -291,7 +294,7 @@ def draw_title(surf, now: float, *, cpu_diff_index: int, buttons, pressed_action
     _centered(surf, text_fit(TITLE_CATCH_COPY, 26, PB_INK), 276)
     draw_title_worm(surf, now)
     draw_title_ladybug(surf, now)
-    _centered(surf, text(f"つよさ（vs {CPU_LABEL}）", 24, PB_INK), 404)
+    _centered(surf, text(f"つよさ（vs {CPU_LABEL}）", 24, PB_INK), TITLE_DIFF_LABEL_Y)
     _draw_buttons(
         surf, buttons, pressed_action=pressed_action, pressed_at=pressed_at, now=now,
         selected_action=f"cpu_diff:{cpu_diff_index}",
