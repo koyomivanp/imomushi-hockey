@@ -90,6 +90,20 @@ def main() -> int:
         game.step(DT)
     shot("dash")
 
+    # 貫通の演出
+    game.on_release(1, *dash_button_center(0))
+    game.fx.reset()
+    bx, by = MOBILE_W / 2 + 90, 360
+    game.fx.burst_breach(bx, by, -1.2, 1)
+    for _ in range(4):
+        game.fx.update(DT)
+    shot("breach")
+    bench("breach_fx")
+    for _ in range(14):
+        game.fx.update(DT)
+    shot("breach_late")
+    game.fx.reset()
+
     match.toggle_pause()
     shot("pause")
     match.toggle_pause()

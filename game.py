@@ -623,6 +623,7 @@ class Match:
                         fences_to_remove.append(fence)
                         if breached:
                             puck.breach_flash_until = now + FENCE_BREACH_FLASH_DURATION
+                            puck.breach_owner = fence.owner
                             self.breach_sparks.extend(
                                 spawn_breach_sparks(puck.x, puck.y, puck.vx, puck.vy),
                             )

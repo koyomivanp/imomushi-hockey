@@ -31,7 +31,6 @@ from game import GameState
 from mobile_art import (
     court_screen_rect,
     court_surface,
-    dash_tail_points,
     draw_face,
     draw_ladybug,
     draw_logo,
@@ -212,10 +211,7 @@ def draw_worm(surf: pygame.Surface, match, player: int, now: float, offset: tupl
             pts.append((head_x, head_y, radius))
         draw_tube(surf, pts, player)
 
-    if paddle.is_dashing:
-        draw_tube(surf, dash_tail_points(head_x, head_y, heading, radius, now), player)
-    else:
-        draw_tube(surf, [(head_x, head_y, radius)], player)
+    draw_tube(surf, [(head_x, head_y, radius)], player)
     draw_face(surf, head_x, head_y, radius, heading, player)
 
 
@@ -234,6 +230,10 @@ def draw_match(surf: pygame.Surface, match, now: float, fx=None, shake: tuple[fl
     for puck in match.pucks:
         px, py = logic_to_screen(puck.x, puck.y)
         heading = logic_heading_to_screen(math.atan2(puck.vy, puck.vx))
+        if now < puck.breach_flash_until:
+            glow = (round(px + ox), round(py + oy))
+            pygame.draw.circle(surf, PB_INK, glow, round(puck_r) + 15)
+            pygame.draw.circle(surf, PB_SUN, glow, round(puck_r) + 11)
         draw_ladybug(surf, px + ox, py + oy, puck_r, heading)
 
     if fx is not None:

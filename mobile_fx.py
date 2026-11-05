@@ -16,7 +16,6 @@ from constants import (
     MOBILE_GOAL_TEXT_DURATION,
     MOBILE_H,
     MOBILE_W,
-    PB_CREAM,
     PB_HILL_HI,
     PB_HILL_LO,
     PB_INK,
@@ -46,6 +45,29 @@ class Particle:
     gravity: float = GRAVITY
 
 
+@dataclass
+class Impact:
+    """貫通の閃光ひとつ分"""
+
+    x: float
+    y: float
+    angle: float
+    age: float = 0.0
+
+
+IMPACT_LIFE = 0.55
+IMPACT_FLASH_TIME = 0.2
+
+
+def _star_points(x: float, y: float, outer: float, inner: float, turn: float) -> list[tuple[int, int]]:
+    pts = []
+    for i in range(20):
+        r = outer if i % 2 == 0 else inner
+        ang = turn + i * math.tau / 20
+        pts.append((int(x + math.cos(ang) * r), int(y + math.sin(ang) * r)))
+    return pts
+
+
 def _petal_points(p: Particle, scale: float) -> list[tuple[int, int]]:
     r = p.size * scale
     pts = []
@@ -60,12 +82,14 @@ class MobileFX:
 
     def __init__(self) -> None:
         self.particles: list[Particle] = []
+        self.impacts: list[Impact] = []
         self.goal_text_timer = 0.0
         self.goal_text_player = 0
         self.rng = random.Random(4242)
 
     def reset(self) -> None:
         self.particles.clear()
+        self.impacts.clear()
         self.goal_text_timer = 0.0
 
     # --- 発生 ---
@@ -92,37 +116,46 @@ class MobileFX:
         self.goal_text_timer = MOBILE_GOAL_TEXT_DURATION
         self.goal_text_player = player
 
-    def puff_dash(self, x: float, y: float, heading: float, player: int) -> None:
-        """ダッシュの土ぼこりと葉の残像"""
-        back = heading + math.pi
-        for _ in range(2):
-            ang = back + self.rng.uniform(-0.5, 0.5)
-            speed = self.rng.uniform(40, 130)
-            self._add(Particle(
-                x=x + math.cos(back) * 24, y=y + math.sin(back) * 24,
-                vx=math.cos(ang) * speed, vy=math.sin(ang) * speed,
-                rot=0.0, vrot=0.0,
-                size=self.rng.uniform(8, 15), life=self.rng.uniform(0.22, 0.4), age=0.0,
-                color=PB_CREAM, kind="dust", gravity=0.0,
-            ))
-
-    def burst_shards(self, x: float, y: float, player: int) -> None:
-        """貫通 — 葉のかけらが飛び散る"""
+    def burst_shards(self, x: float, y: float, heading: float, player: int, *, count: int = 12) -> None:
+        """貫通 — 体節のかけらが、葉っぱの進む方へ飛び散る"""
         body, dark = palette(player)
-        for _ in range(12):
-            ang = self.rng.uniform(0, math.tau)
-            speed = self.rng.uniform(170, 380)
+        for i in range(count):
+            spread = self.rng.uniform(-0.9, 0.9) if i % 3 else self.rng.uniform(0, math.tau)
+            ang = heading + spread
+            speed = self.rng.uniform(220, 620)
             self._add(Particle(
                 x=x, y=y, vx=math.cos(ang) * speed, vy=math.sin(ang) * speed,
-                rot=self.rng.uniform(0, math.tau), vrot=self.rng.uniform(-9, 9),
-                size=self.rng.uniform(7, 13), life=self.rng.uniform(0.35, 0.6), age=0.0,
-                color=self.rng.choice((body, dark, PB_HILL_HI)), kind="leaf",
+                rot=self.rng.uniform(0, math.tau), vrot=self.rng.uniform(-11, 11),
+                size=self.rng.uniform(8, 17), life=self.rng.uniform(0.4, 0.75), age=0.0,
+                color=self.rng.choice((body, body, dark, PB_SUN)), kind="leaf",
+            ))
+
+    def burst_breach(self, x: float, y: float, heading: float, player: int) -> None:
+        """貫通の見せ場 — 星形の閃光、衝撃の輪、かけら、「バリッ！」"""
+        self.impacts.append(Impact(x=x, y=y, angle=self.rng.uniform(-0.2, 0.2)))
+        self.burst_shards(x, y, heading, player, count=20)
+
+    def spark_trail(self, x: float, y: float, heading: float) -> None:
+        """貫通直後の葉っぱが引く火花"""
+        back = heading + math.pi
+        for _ in range(2):
+            ang = back + self.rng.uniform(-0.45, 0.45)
+            speed = self.rng.uniform(120, 300)
+            self._add(Particle(
+                x=x, y=y, vx=math.cos(ang) * speed, vy=math.sin(ang) * speed,
+                rot=0.0, vrot=0.0,
+                size=self.rng.uniform(4, 8), life=self.rng.uniform(0.15, 0.3), age=0.0,
+                color=self.rng.choice((PB_SUN, PB_WHITE, PB_PINK)), kind="spark", gravity=0.0,
             ))
 
     # --- 更新・描画 ---
     def update(self, dt: float) -> None:
         if self.goal_text_timer > 0.0:
             self.goal_text_timer = max(0.0, self.goal_text_timer - dt)
+        if self.impacts:
+            for impact in self.impacts:
+                impact.age += dt
+            self.impacts = [i for i in self.impacts if i.age < IMPACT_LIFE]
         if not self.particles:
             return
         alive: list[Particle] = []
@@ -140,14 +173,42 @@ class MobileFX:
                 alive.append(p)
         self.particles = alive
 
+    def _draw_impact(self, surf: pygame.Surface, impact: Impact) -> None:
+        k = impact.age / IMPACT_LIFE
+        x, y = impact.x, impact.y
+        ease = 1.0 - (1.0 - k) ** 3
+        ring_r = int(30 + 110 * ease)
+        ring_w = max(2, int(8 * (1.0 - k)))
+        pygame.draw.circle(surf, PB_INK, (int(x), int(y)), ring_r + 3, ring_w + 5)
+        pygame.draw.circle(surf, PB_WHITE, (int(x), int(y)), ring_r, ring_w)
+        if impact.age < IMPACT_FLASH_TIME:
+            f = impact.age / IMPACT_FLASH_TIME
+            size = (34 + 44 * min(1.0, f * 3.0)) * (1.0 - f * f)
+            turn = impact.angle + f * 0.5
+            pygame.draw.polygon(surf, PB_INK, _star_points(x, y, size + 9, size * 0.52 + 7, turn))
+            pygame.draw.polygon(surf, PB_SUN, _star_points(x, y, size, size * 0.52, turn))
+            pygame.draw.polygon(surf, PB_WHITE, _star_points(x, y, size * 0.56, size * 0.3, turn))
+        pop = min(1.0, impact.age / 0.09)
+        out = max(0.0, (k - 0.72) / 0.28)
+        scale = (0.5 + 0.7 * pop) * (1.0 - out * 0.6) * (1.0 + (1.0 - pop) * 0.5)
+        glyph = text_fit("バリッ！", 40, PB_SUN, max_width=MOBILE_W - 120, outline=PB_INK, outline_px=5)
+        zoomed = pygame.transform.rotozoom(glyph, math.degrees(impact.angle), scale)
+        # 画面の外へはみ出さない位置に出す
+        rect = zoomed.get_rect(center=(int(x), int(y) - 62))
+        surf.blit(zoomed, rect.clamp(surf.get_rect()))
+
     def draw(self, surf: pygame.Surface) -> None:
+        for impact in self.impacts:
+            self._draw_impact(surf, impact)
         for p in self.particles:
             fade = 1.0 - p.age / p.life
             scale = min(1.0, fade * 2.2)
             if scale <= 0.08:
                 continue
-            if p.kind == "dust":
-                pygame.draw.circle(surf, p.color, (int(p.x), int(p.y)), max(2, int(p.size * scale)))
+            if p.kind == "spark":
+                tail = (int(p.x - p.vx * 0.05), int(p.y - p.vy * 0.05))
+                pygame.draw.line(surf, PB_INK, (int(p.x), int(p.y)), tail, max(3, int(p.size * scale) + 3))
+                pygame.draw.line(surf, p.color, (int(p.x), int(p.y)), tail, max(2, int(p.size * scale)))
                 continue
             pts = _petal_points(p, scale)
             pygame.draw.polygon(surf, PB_INK, pts)

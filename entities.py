@@ -131,6 +131,7 @@ class Puck:
     grind_escape_x: float = 0.0
     dash_breach_until: float = 0.0
     breach_flash_until: float = 0.0
+    breach_owner: int = 0
     prev_x: float = 0.0
     prev_y: float = 0.0
     speed_limit: float = PUCK_MAX_SPEED  # 現在の速度上限（ダッシュ打・ラリーで上がる）

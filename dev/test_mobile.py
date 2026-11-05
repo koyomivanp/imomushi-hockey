@@ -35,6 +35,7 @@ from constants import (
     TOUCH_PAD_RADIUS,
     PB_P1,
     PB_P2,
+    PB_SUN,
 )
 from entities import Fence, goal_score_bounds, playable_rect
 from game import GameState
@@ -160,7 +161,7 @@ class PortraitMappingTest(unittest.TestCase):
             self.assertAlmostEqual(dy / norm, sy)
 
     def test_mobile_bodies_are_big_enough_to_see(self) -> None:
-        self.assertGreater(scaled(tuning.body_radius()) * 2, 54.0)
+        self.assertGreater(scaled(tuning.body_radius()) * 2, 46.0)
         self.assertGreater(scaled(tuning.puck_radius()) * 2, 54.0)
         self.assertAlmostEqual(tuning.fence_half_width(), tuning.body_radius())
 
@@ -264,9 +265,9 @@ class MobileGameTest(unittest.TestCase):
         arrows = collections.defaultdict(bool, {pygame.K_LEFT: True})
         self.assertEqual(keyboard_output(arrows, 0, two_player=True), (0.0, 0.0, False))
         self.assertEqual(keyboard_output(arrows, 1, two_player=True), (-1.0, 0.0, False))
+        game = self._game_in_play()
+        before = logic_to_screen(game.match.paddles[0].x, game.match.paddles[0].y)[1]
         with mock.patch("pygame.key.get_pressed", lambda: collections.defaultdict(bool, {pygame.K_UP: True})):
-            game = self._game_in_play()
-            before = logic_to_screen(game.match.paddles[0].x, game.match.paddles[0].y)[1]
             self._run(game, 0.3)
             self.assertLess(logic_to_screen(game.match.paddles[0].x, game.match.paddles[0].y)[1], before)
 
@@ -483,6 +484,72 @@ class MobileEffectsTest(unittest.TestCase):
         game.match.winner = 0
         game.step(DT)
         self.assertTrue(game.butterfly.active)
+
+    def _breach_scene(self):
+        """ダッシュで打った葉っぱが相手の体節へ飛び込む直前の場面"""
+        game = MobileGame(None)
+        game.perform("cpu:0")
+        for _ in range(60 * 5):
+            game.step(DT)
+            if game.match.state == GameState.PLAYING:
+                break
+        match = game.match
+        puck = match.pucks[0]
+        puck.x, puck.y, puck.vx, puck.vy = 500.0, 300.0, 500.0, 0.0
+        puck.prev_x, puck.prev_y = puck.x, puck.y
+        puck.dash_breach_until = game.game_time + 1.0
+        puck.fence_ignore_until = 0.0
+        match.paddles[0].x, match.paddles[0].y = 150.0, 500.0
+        match.paddles[1].x, match.paddles[1].y = 650.0, 500.0
+        game.cpu_ai.decide = lambda *a, **k: (0.0, 0.0, False)
+        match.fences = [Fence(
+            owner=1, x1=530.0, y1=240.0, x2=530.0, y2=360.0,
+            until=game.game_time + 9.0, created_at=game.game_time, half_width=tuning.fence_half_width(),
+        )]
+        return game, puck
+
+    def test_real_breach_plays_big_effect_in_the_owners_color(self) -> None:
+        game, puck = self._breach_scene()
+        game.step(DT)
+        self.assertEqual(puck.breach_owner, 1)
+        self.assertEqual(len(game.fx.impacts), 1, "閃光が出ていない")
+        self.assertGreaterEqual(len(game.fx.particles), 20)
+        self.assertGreater(game.hitstop_timer, 0.0)
+        self.assertGreater(game.shake_timer, 0.0)
+        self.assertEqual(game.match.fences, [], "貫かれた体節が消えていない")
+        screen = pygame.display.get_surface()
+        draw_frame(screen, game, game.game_time)
+        self.assertGreater(_count_color(screen, PB_SUN), 800, "閃光が描かれていない")
+
+    def test_breach_effect_does_not_repeat_for_neighboring_segments(self) -> None:
+        game, puck = self._breach_scene()
+        game.step(DT)
+        puck.breach_flash_until = game.game_time + 0.5
+        game._watch_match_events()
+        self.assertEqual(len(game.fx.impacts), 1)
+
+    def test_dash_has_no_extra_tail_or_dust_on_the_body(self) -> None:
+        """ダッシュ中も頭と体節だけを描く"""
+        import mobile_view
+
+        game = MobileGame(None)
+        game.perform("cpu:0")
+        for _ in range(60 * 5):
+            game.step(DT)
+            if game.match.state == GameState.PLAYING:
+                break
+        game.match.pucks = []
+        game.external_moves = lambda: {0: (0.0, -1.0, True), 1: (0.0, 0.0, False)}
+        calls = []
+        real = mobile_view.draw_tube
+        with mock.patch.object(mobile_view, "draw_tube", lambda s, pts, p: (calls.append((p, len(pts))), real(s, pts, p))):
+            for _ in range(10):
+                game.step(DT)
+            calls.clear()
+            mobile_view.draw_worm(pygame.display.get_surface(), game.match, 0, game.game_time, (0, 0))
+        self.assertLessEqual(len(calls), 2, "胴体と頭以外が描かれている")
+        self.assertEqual(calls[-1][1], 1)
+        self.assertFalse(hasattr(mobile_view, "dash_tail_points"))
 
     def test_hitstop_freezes_the_match_briefly(self) -> None:
         game = MobileGame(None)

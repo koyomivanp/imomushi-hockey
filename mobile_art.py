@@ -306,21 +306,6 @@ def draw_face(surf: pygame.Surface, x: float, y: float, radius: float, heading: 
     surf.blit(rotated, rotated.get_rect(center=(int(x), int(y))))
 
 
-def dash_tail_points(x: float, y: float, heading: float, radius: float, phase: float) -> list[tuple[float, float, float]]:
-    """ダッシュ中の身体 — 後ろへ波打って伸びる"""
-    pts: list[tuple[float, float, float]] = []
-    fx, fy = math.cos(heading), math.sin(heading)
-    px, py = -fy, fx
-    length = radius * 3.9
-    for i in range(7):
-        t = i / 6
-        wave = math.sin(phase * 19.0 - t * 5.4) * radius * 0.42 * t
-        r = radius * (1.0 - 0.46 * t * t)
-        pts.append((x - fx * length * t + px * wave, y - fy * length * t + py * wave, r))
-    pts.reverse()
-    return pts
-
-
 # --- ボール（てんとう虫） ---
 
 _ladybug_cache: dict[int, pygame.Surface] = {}
