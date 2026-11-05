@@ -25,10 +25,12 @@ from constants import (
     TIPS_COMMON,
     TIPS_CPU_CONTROLS,
     TIPS_TWO_PLAYER_CONTROLS,
+    TITLE_HINT_TEXT,
     TITLE_MENU_H,
     TITLE_MENU_GAP,
     TITLE_MENU_TOP,
     TITLE_MENU_W,
+    WIN_SCORE,
 )
 from ai import CPU_DIFFICULTY_ORDER, DIFFICULTIES
 from arena_assets import draw_forest_atmosphere, draw_menu_backdrop, has_rich_backdrop
@@ -42,6 +44,30 @@ from title_typography import (
     render_ui_outlined,
 )
 from result_flow import ResultPhase, draw_result_dim_overlay, ease_out_back
+
+HELP_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ルール", (
+        f"葉っぱを相手のゴールへ入れる。先に {WIN_SCORE} 点取ると勝ち。",
+    )),
+    ("這う", (
+        "這った跡が体節の壁になり、葉っぱをはね返す。",
+        "体節は葉っぱが当たるか、時間がたつと消える。芋虫は通り抜けられる。",
+    )),
+    ("ダッシュ", (
+        "速く動けて体節は残らない。打った葉っぱは強く飛ぶ。",
+        "ダッシュで打った直後の葉っぱは、相手の体節を貫通する。",
+    )),
+)
+HELP_MOVE_ROWS: tuple[tuple[str, str], ...] = (
+    ("P1", "WASD ＋ 左Shift"),
+    ("P2", "矢印キー ＋ 右Shift"),
+    ("CPU戦", "WASD ＋ 左右どちらかのShift"),
+)
+HELP_SYSTEM_ROWS: tuple[tuple[str, str], ...] = (
+    ("P / Esc", "ポーズ"),
+    ("M", "BGM オン/オフ"),
+    ("F", "フルスクリーン"),
+)
 
 MenuRole = Literal["primary", "normal", "quit"]
 
@@ -227,8 +253,8 @@ def _draw_title_dapple_light(surf: pygame.Surface, now: float) -> None:
 
 
 def tips_for_match(vs_cpu: bool) -> tuple[str, ...]:
-    _ = vs_cpu
-    return TIPS_COMMON
+    controls = TIPS_CPU_CONTROLS if vs_cpu else TIPS_TWO_PLAYER_CONTROLS
+    return (controls, *TIPS_COMMON)
 
 
 def pick_random_tip(vs_cpu: bool) -> str:
@@ -273,6 +299,62 @@ def draw_title_screen(
             role=role,
             now=now,
         )
+
+    hint = render_ui_outlined(TITLE_HINT_TEXT, fonts.hud_meta, MENU_TEXT, outline=_BARK, outline_px=2)
+    surf.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H - 14)))
+
+
+def _draw_help_rows(
+    surf: pygame.Surface,
+    rows: tuple[tuple[str, str], ...],
+    x: int,
+    y: int,
+    key_w: int,
+    font: pygame.font.Font,
+    line_h: int,
+) -> int:
+    for key, desc in rows:
+        surf.blit(font.render(key, True, LOGO_FILL), (x, y))
+        surf.blit(font.render(desc, True, MENU_TEXT), (x + key_w, y))
+        y += line_h
+    return y
+
+
+def draw_help_screen(
+    surf: pygame.Surface,
+    fonts: TitleFonts,
+    *,
+    now: float = 0.0,
+) -> None:
+    """遊び方（タイトルの H）"""
+    draw_menu_backdrop(surf, now)
+    _draw_title_dapple_light(surf, now)
+
+    card = pygame.Rect(60, 28, SCREEN_W - 120, SCREEN_H - 56)
+    _draw_organic_menu_card(surf, card, border_color=MENU_BORDER, seed=card.centerx)
+
+    title = render_ui_outlined("遊び方", fonts.logo_line1, LOGO_FILL, outline=_BARK, outline_px=3)
+    surf.blit(title, title.get_rect(midtop=(SCREEN_W // 2, card.top + 6)))
+
+    body = fonts.menu_preview
+    x = card.left + 32
+    y = card.top + 94
+    line_h = 27
+    for head, lines in HELP_SECTIONS:
+        surf.blit(fonts.menu.render(head, True, MENU_TITLE_GLOW), (x, y))
+        y += line_h + 2
+        for line in lines:
+            surf.blit(body.render(line, True, MENU_TEXT), (x + 8, y))
+            y += line_h
+        y += 6
+
+    surf.blit(fonts.menu.render("操作", True, MENU_TITLE_GLOW), (x, y))
+    y += line_h + 2
+    _draw_help_rows(surf, HELP_MOVE_ROWS, x + 8, y, 76, body, line_h)
+    _draw_help_rows(surf, HELP_SYSTEM_ROWS, x + 374, y, 76, body, line_h)
+
+    hint = fonts.screen_small.render("H / Esc / Space: 戻る", True, MENU_TEXT_DIM)
+    surf.blit(hint, hint.get_rect(midbottom=(SCREEN_W // 2, card.bottom - 8)))
 
 
 def _draw_menu_button(

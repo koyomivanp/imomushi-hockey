@@ -24,6 +24,7 @@ class CPUDifficulty:
 
     dash_chance: float
     dash_cooldown: float
+    dash_duration: float
 
 
 DIFFICULTIES: dict[str, CPUDifficulty] = {
@@ -37,6 +38,7 @@ DIFFICULTIES: dict[str, CPUDifficulty] = {
         intercept_lead=0.48,
         dash_chance=0.22,
         dash_cooldown=1.15,
+        dash_duration=0.12,
     ),
     "normal": CPUDifficulty(
         key="normal",
@@ -48,6 +50,7 @@ DIFFICULTIES: dict[str, CPUDifficulty] = {
         intercept_lead=0.65,
         dash_chance=0.34,
         dash_cooldown=1.05,
+        dash_duration=0.16,
     ),
     "hard": CPUDifficulty(
         key="hard",
@@ -59,6 +62,7 @@ DIFFICULTIES: dict[str, CPUDifficulty] = {
         intercept_lead=0.82,
         dash_chance=0.48,
         dash_cooldown=0.88,
+        dash_duration=0.20,
     ),
 }
 
@@ -72,6 +76,7 @@ class CPUAI:
         self._target = (0.0, 0.0)
         self._next_update = 0.0
         self._dash_cooldown_until = 0.0
+        self._dash_until = 0.0
 
     @property
     def difficulty(self) -> CPUDifficulty:
@@ -86,6 +91,7 @@ class CPUAI:
         self._target = (play.right - play.width * 0.2, play.centery)
         self._next_update = 0.0
         self._dash_cooldown_until = 0.0
+        self._dash_until = 0.0
 
     def decide(
         self,
@@ -100,7 +106,8 @@ class CPUAI:
             return 0.0, 0.0, False
 
         diff = self.difficulty
-        if now >= self._next_update:
+        retargeted = now >= self._next_update
+        if retargeted:
             self._target = self._pick_target(paddle, pucks, now)
             self._next_update = now + random.uniform(diff.reaction_min, diff.reaction_max)
 
@@ -111,9 +118,12 @@ class CPUAI:
         if dist < 8.0:
             return 0.0, 0.0, False
         nx, ny = dx / dist, dy / dist
-        dash = self._want_dash(paddle, dist, fences, now)
-        if dash:
-            self._dash_cooldown_until = now + diff.dash_cooldown
+        dash = now < self._dash_until
+        # dash_chance は毎フレームではなく狙い直しごとに判定（難易度差を出すため）
+        if not dash and retargeted and self._want_dash(paddle, dist, fences, now):
+            dash = True
+            self._dash_until = now + diff.dash_duration
+            self._dash_cooldown_until = self._dash_until + diff.dash_cooldown
         return nx, ny, dash
 
     def _want_dash(

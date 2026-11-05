@@ -282,6 +282,8 @@ class SoundManager:
         self._trail_cooldown = 0.065
         self._breach_cooldown = 0.06
         self._trail_pitch = 0.0
+        self._trail_low = _make_trail_boop(130.0)
+        self._trail_high = _make_trail_boop(155.0)
         self._title_path = _find_track(("bgm_title", "bgm", "music"))
         self._battle_path = _find_track(("bgm_battle", "battle_bgm", "bgm_fight"))
         self._current_mode: BGMMode | None = None
@@ -321,7 +323,7 @@ class SoundManager:
         self._play_mode(BGMMode.BATTLE)
 
     def set_bgm_for_state(self, state_name: str) -> None:
-        if state_name == "TITLE" or state_name in ("CPU_DIFF", "PREP"):
+        if state_name == "TITLE" or state_name in ("CPU_DIFF", "PREP", "HELP"):
             if self._current_mode != BGMMode.TITLE:
                 self.play_title_bgm()
         elif state_name in ("COUNTDOWN", "PLAYING", "RESULT"):
@@ -343,7 +345,10 @@ class SoundManager:
             pygame.mixer.music.unpause()
 
     def toggle_bgm_mute(self) -> bool:
-        self.bgm_muted = not self.bgm_muted
+        return self.set_bgm_muted(not self.bgm_muted)
+
+    def set_bgm_muted(self, muted: bool) -> bool:
+        self.bgm_muted = muted
         if self._bgm_playing and self._current_mode is not None:
             pygame.mixer.music.set_volume(self._volume_for(self._current_mode))
         return self.bgm_muted
@@ -375,8 +380,7 @@ class SoundManager:
             return
         self._last_trail_at = now
         self._trail_pitch = 0.62 if self._trail_pitch < 0.5 else 0.38
-        base = 130.0 if self._trail_pitch < 0.5 else 155.0
-        tone = _make_trail_boop(base)
+        tone = self._trail_low if self._trail_pitch < 0.5 else self._trail_high
         self._play(tone, 0.17)
 
     def play_fence_breach(self, now: float) -> None:

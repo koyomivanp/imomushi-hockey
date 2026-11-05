@@ -42,12 +42,12 @@ from caterpillar_art import (
 from sprites import draw_leaf_sprite
 
 
-def clamp_speed(vx: float, vy: float) -> tuple[float, float]:
+def clamp_speed(vx: float, vy: float, max_speed: float = PUCK_MAX_SPEED) -> tuple[float, float]:
     speed = math.hypot(vx, vy)
     if speed < 1e-6:
         return 0.0, 0.0
-    if speed > PUCK_MAX_SPEED:
-        scale = PUCK_MAX_SPEED / speed
+    if speed > max_speed:
+        scale = max_speed / speed
         return vx * scale, vy * scale
     if speed < PUCK_MIN_SPEED:
         scale = PUCK_MIN_SPEED / speed
@@ -132,6 +132,7 @@ class Puck:
     breach_flash_until: float = 0.0
     prev_x: float = 0.0
     prev_y: float = 0.0
+    speed_limit: float = PUCK_MAX_SPEED  # 現在の速度上限（ダッシュ打・ラリーで上がる）
 
     @property
     def radius(self) -> float:

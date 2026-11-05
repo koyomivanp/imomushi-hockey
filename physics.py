@@ -143,7 +143,7 @@ def resolve_puck_wall(puck: Puck) -> tuple[Optional[int], bool]:
     if bounced and scored_side is None:
         _apply_rally_escalation(puck)
 
-    puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
+    puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy, puck.speed_limit)
     return scored_side, bounced
 
 
@@ -629,8 +629,10 @@ def resolve_puck_paddle(puck: Puck, paddle: Paddle, now: float) -> bool:
         _reset_wall_grind(puck)
 
     if paddle.is_dashing:
+        puck.speed_limit = PUCK_DASH_HIT_MAX_SPEED
         puck.vx, puck.vy = _clamp_dash_hit_speed(puck.vx, puck.vy)
     else:
+        puck.speed_limit = PUCK_MAX_SPEED
         puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
     mark_puck_paddle_hit(puck, paddle, now, ignore_time)
     return True
@@ -655,8 +657,8 @@ def resolve_puck_puck(a: Puck, b: Puck) -> None:
     a.vy += impulse * ny
     b.vx -= impulse * nx
     b.vy -= impulse * ny
-    a.vx, a.vy = clamp_speed(a.vx, a.vy)
-    b.vx, b.vy = clamp_speed(b.vx, b.vy)
+    a.vx, a.vy = clamp_speed(a.vx, a.vy, a.speed_limit)
+    b.vx, b.vy = clamp_speed(b.vx, b.vy, b.speed_limit)
 
 
 def resolve_paddle_paddle(a: Paddle, b: Paddle, now: float) -> None:
@@ -751,7 +753,7 @@ def resolve_puck_line(
             puck.vx += nx * boost
             puck.vy += ny * boost
 
-    puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
+    puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy, puck.speed_limit)
     puck.fence_ignore_until = now + (0.05 if breach else 0.08)
     return True
 
@@ -776,11 +778,12 @@ def _apply_rally_escalation(puck: Puck) -> None:
     if speed < 1e-6:
         return
     cap = PUCK_MAX_SPEED * RALLY_BOUNCE_MAX_MULT
-    new_speed = min(cap, speed * (1 + RALLY_BOUNCE_BOOST))
+    # ダッシュ打で上限より速いときは減速させない
+    new_speed = max(speed, min(cap, speed * (1 + RALLY_BOUNCE_BOOST)))
     scale = new_speed / speed
     puck.vx *= scale
     puck.vy *= scale
-    puck.vx, puck.vy = clamp_speed(puck.vx, puck.vy)
+    puck.speed_limit = max(puck.speed_limit, new_speed)
 
 
 def resolve_puck_fence(puck: Puck, fence: Fence, now: float) -> tuple[bool, bool]:

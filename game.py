@@ -7,6 +7,7 @@ import pygame
 
 from constants import (
     COUNTDOWN_START,
+    GO_DISPLAY_DURATION,
     PREP_DARKEN_DURATION,
     PREP_REVEAL_DURATION,
     TIPS_DISPLAY_DURATION,
@@ -69,11 +70,13 @@ class GameState(Enum):
     PLAYING = auto()
     RESULT = auto()
     PAUSE = auto()
+    HELP = auto()
 
 
 class Match:
-    def __init__(self, audio: "SoundManager | None" = None) -> None:
+    def __init__(self, audio: "SoundManager | None" = None, *, cpu_diff_index: int = 1) -> None:
         self.audio = audio
+        self.cpu_diff_index = cpu_diff_index
         self.reset_match()
 
     def _init_paddles(self) -> None:
@@ -94,6 +97,7 @@ class Match:
         self.state = GameState.TITLE
         self.countdown = COUNTDOWN_START
         self.countdown_timer = 0.0
+        self.go_timer = 0.0
         self.match_time = 0.0
         self.winner: int | None = None
         self.announce = ""
@@ -111,8 +115,7 @@ class Match:
         self.arena_lighting = ArenaLightingState.inactive()
         self.title_menu_index = 0
         self.title_menu_sel = SelectionHighlight(0)
-        self.cpu_diff_index = 1
-        self.cpu_diff_sel = SelectionHighlight(1)
+        self.cpu_diff_sel = SelectionHighlight(self.cpu_diff_index)
         self.cpu_diff_morph = 0.0
         self.cpu_diff_exiting = False
         self.prep_from_state: GameState | None = None
@@ -132,13 +135,12 @@ class Match:
         self.result_dimness = 0.0
         self.result_card_alpha = 0.0
 
-    def begin_from_menu(self, vs_cpu: bool) -> None:
-        """タイトルメニューから試合準備へ"""
+    def _reset_for_new_match(self) -> None:
         self._init_paddles()
         self.pucks = []
         self.fences = []
         self.scores = [0, 0]
-        self.vs_cpu = vs_cpu
+        self.go_timer = 0.0
         self.winner = None
         self.announce = ""
         self.announce_timer = 0.0
@@ -164,6 +166,11 @@ class Match:
         self.result_phase_progress = 0.0
         self.result_dimness = 0.0
         self.result_card_alpha = 0.0
+
+    def begin_from_menu(self, vs_cpu: bool) -> None:
+        """タイトルメニューから試合準備へ"""
+        self._reset_for_new_match()
+        self.vs_cpu = vs_cpu
         if vs_cpu:
             self.cpu_diff_morph = 0.0
             self.cpu_diff_sel.snap_to(self.cpu_diff_index)
@@ -229,16 +236,35 @@ class Match:
         self.prep_darkness = 0.0
         self.prep_from_state = None
         self.state = GameState.COUNTDOWN
+        if self.audio is not None:
+            self.audio.play_countdown()
 
     def enter_countdown(self) -> None:
         self._prepare_countdown()
         self.state = GameState.COUNTDOWN
+        if self.audio is not None:
+            self.audio.play_countdown()
 
     def _begin_tips(self) -> None:
         self.start_match_prep()
 
-    def start_rematch(self, vs_cpu: bool) -> None:
-        self.begin_from_menu(vs_cpu)
+    def start_rematch(self) -> None:
+        """リザルトのコートから暗転し、同じ設定で再戦（難易度選択・TIPS は挟まない）"""
+        self.prep_from_state = GameState.RESULT
+        self.prep_phase = PrepPhase.DARKEN
+        self.prep_phase_progress = 0.0
+        self.tips_alpha = 0.0
+        self.prep_darkness = 0.0
+        self.prep_reveal = 0.0
+        self.state = GameState.PREP
+
+    def open_help(self) -> None:
+        if self.state == GameState.TITLE:
+            self.state = GameState.HELP
+
+    def close_help(self) -> None:
+        if self.state == GameState.HELP:
+            self.state = GameState.TITLE
 
     def begin_cpu_diff_exit(self) -> None:
         if self.state != GameState.CPU_DIFF or self.cpu_diff_exiting:
@@ -257,7 +283,7 @@ class Match:
     ) -> None:
         if self.state == GameState.TITLE:
             return
-        if self.state in (GameState.CPU_DIFF, GameState.PREP):
+        if self.state in (GameState.CPU_DIFF, GameState.PREP, GameState.HELP):
             return
         if self.state == GameState.RESULT:
             return
@@ -439,6 +465,14 @@ class Match:
             self.prep_darkness = ease_in_out(t)
             self.prep_reveal = 0.0
             self.tips_alpha = 0.0
+            if self.prep_from_state == GameState.RESULT:
+                self.result_dimness = 1.0 - t
+                self.result_card_alpha = 1.0 - t
+                if self.prep_phase_progress >= PREP_DARKEN_DURATION:
+                    self._reset_for_new_match()
+                    self._begin_prep_reveal()
+                    self.prep_darkness = 1.0  # リセットで明るいコートが一瞬見えないように
+                return
             if self.prep_phase_progress >= PREP_DARKEN_DURATION:
                 self._advance_prep_phase(PrepPhase.TIPS_IN)
             return
@@ -495,7 +529,7 @@ class Match:
         if self.state == GameState.PREP:
             self._update_prep(dt)
             return
-        if self.state == GameState.PAUSE:
+        if self.state in (GameState.PAUSE, GameState.HELP):
             return
         if self.state == GameState.RESULT:
             self._update_result(dt)
@@ -509,6 +543,7 @@ class Match:
                     self.state = GameState.PLAYING
                     self.pucks_frozen = False
                     self.match_time = 0.0
+                    self.go_timer = GO_DISPLAY_DURATION
                     self._sync_paddle_trail_anchors()
                     if self.audio is not None:
                         self.audio.play_start()
@@ -520,6 +555,7 @@ class Match:
 
         # PLAYING
         self.match_time += dt
+        self.go_timer = max(0.0, self.go_timer - dt)
         self.goal_fx = update_goal_celebration(self.goal_fx, dt)
         self.breach_sparks = update_breach_sparks(self.breach_sparks, dt)
         if self.announce_timer > 0:
@@ -747,6 +783,8 @@ class Match:
         for i in range(2):
             if self.scores[i] >= WIN_SCORE:
                 self.winner = i
+                for paddle in self.paddles:
+                    paddle.is_dashing = False
                 self.goal_reset_timer = 0.0
                 self.puck_reset_anim = None
                 self.result_phase = ResultPhase.CELEBRATE

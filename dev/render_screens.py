@@ -22,6 +22,7 @@ from result_flow import ResultPhase
 from screens import (
     _draw_tips_subtitle_veil,
     draw_cpu_difficulty_screen,
+    draw_help_screen,
     draw_result_screen,
     draw_title_screen,
     draw_tips_overlay,
@@ -165,6 +166,27 @@ def render_all() -> list[str]:
     surf = pygame.Surface((SCREEN_W, SCREEN_H))
     _render_battle_scene(surf, match, now=now)
     saved.append(_save(surf, "battle_playing.png"))
+
+    from hud_ui import draw_bgm_muted_badge
+    from main import draw_go, draw_pause
+
+    big_font = pygame.font.SysFont("meiryo", 96, bold=True)
+    surf = pygame.Surface((SCREEN_W, SCREEN_H))
+    _render_battle_scene(surf, match, now=now)
+    draw_pause(surf, title_font, small_font)
+    saved.append(_save(surf, "battle_pause.png"))
+
+    match.go_timer = 0.6
+    surf = pygame.Surface((SCREEN_W, SCREEN_H))
+    _render_battle_scene(surf, match, now=now)
+    draw_go(surf, match, big_font)
+    draw_bgm_muted_badge(surf, title_fonts.hud_meta)
+    saved.append(_save(surf, "battle_go_muted.png"))
+    match.go_timer = 0.0
+
+    surf = pygame.Surface((SCREEN_W, SCREEN_H))
+    draw_help_screen(surf, title_fonts, now=now)
+    saved.append(_save(surf, "help.png"))
 
     match.scores = [1, 0]
     match.match_time = 61.0
