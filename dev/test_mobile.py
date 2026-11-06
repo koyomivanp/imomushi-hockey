@@ -477,6 +477,30 @@ class MobileEffectsTest(unittest.TestCase):
         self.assertGreater(game.shake_timer, 0.0)
         self.assertNotEqual(game.shake_offset(), (0.0, 0.0))
 
+    def test_result_post_button_opens_x_with_score(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+
+        import mobile_main
+
+        game = MobileGame(None)
+        game.perform("cpu:2")
+        match = game.match
+        match.scores = [3, 1]
+        match.winner = 0
+        match.state = GameState.RESULT
+        match.result_phase = ResultPhase.HOLD
+        post = next(b for b in game.visible_buttons() if b.action == "post_result")
+        opened = []
+        with mock.patch.object(mobile_main, "open_url", opened.append):
+            game.on_press(mobile_main.MOUSE_FINGER, *post.rect.center)
+        self.assertEqual(len(opened), 1)
+        url = urlparse(opened[0])
+        self.assertEqual(url.netloc, "x.com")
+        query = parse_qs(url.query)
+        self.assertIn("3-1 で勝った", query["text"][0])
+        self.assertIn("#芋虫ホッケー", query["text"][0])
+        self.assertEqual(query["url"][0], "https://koyomivanp.github.io/imomushi-hockey/play/")
+
     def test_victory_starts_butterfly(self) -> None:
         game = MobileGame(None)
         game.perform("cpu:0")

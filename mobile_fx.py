@@ -57,6 +57,23 @@ class Impact:
 
 IMPACT_LIFE = 0.55
 IMPACT_FLASH_TIME = 0.2
+IMPACT_LINES_TIME = 0.2  # 集中線が出ている時間
+SCREEN_FLASH_TIME = 0.09  # 画面全体が白く光る時間
+SCREEN_FLASH_ALPHA = 110
+
+
+_flash_cache: dict[int, pygame.Surface] = {}
+
+
+def _flash_surface(alpha: int) -> pygame.Surface:
+    key = alpha // 16 * 16
+    surf = _flash_cache.get(key)
+    if surf is None:
+        surf = pygame.Surface((MOBILE_W, MOBILE_H))
+        surf.fill(PB_WHITE)
+        surf.set_alpha(key)
+        _flash_cache[key] = surf
+    return surf
 
 
 def _star_points(x: float, y: float, outer: float, inner: float, turn: float) -> list[tuple[int, int]]:
@@ -133,7 +150,7 @@ class MobileFX:
     def burst_breach(self, x: float, y: float, heading: float, player: int) -> None:
         """貫通の見せ場 — 星形の閃光、衝撃の輪、かけら、「バリッ！」"""
         self.impacts.append(Impact(x=x, y=y, angle=self.rng.uniform(-0.2, 0.2)))
-        self.burst_shards(x, y, heading, player, count=20)
+        self.burst_shards(x, y, heading, player, count=26)
 
     def spark_trail(self, x: float, y: float, heading: float) -> None:
         """貫通直後の葉っぱが引く火花"""
@@ -173,17 +190,40 @@ class MobileFX:
                 alive.append(p)
         self.particles = alive
 
+    def flash_alpha(self) -> int:
+        """貫通した直後の画面の白さ（0 なら光らない）"""
+        newest = min((i.age for i in self.impacts), default=SCREEN_FLASH_TIME)
+        if newest >= SCREEN_FLASH_TIME:
+            return 0
+        return int(SCREEN_FLASH_ALPHA * (1.0 - newest / SCREEN_FLASH_TIME))
+
+    def _draw_speed_lines(self, surf: pygame.Surface, impact: Impact) -> None:
+        f = impact.age / IMPACT_LINES_TIME
+        x, y = impact.x, impact.y
+        for i in range(14):
+            ang = impact.angle * 3.0 + i * math.tau / 14 + (0.12 if i % 2 else 0.0)
+            near = 60 + 150 * f
+            far = near + (150 if i % 2 else 230) * (1.0 - f)
+            c, s = math.cos(ang), math.sin(ang)
+            a = (int(x + c * near), int(y + s * near))
+            b = (int(x + c * far), int(y + s * far))
+            width = max(2, int(9 * (1.0 - f)))
+            pygame.draw.line(surf, PB_INK, a, b, width + 4)
+            pygame.draw.line(surf, PB_WHITE if i % 2 else PB_SUN, a, b, width)
+
     def _draw_impact(self, surf: pygame.Surface, impact: Impact) -> None:
         k = impact.age / IMPACT_LIFE
         x, y = impact.x, impact.y
+        if impact.age < IMPACT_LINES_TIME:
+            self._draw_speed_lines(surf, impact)
         ease = 1.0 - (1.0 - k) ** 3
-        ring_r = int(30 + 110 * ease)
-        ring_w = max(2, int(8 * (1.0 - k)))
+        ring_r = int(30 + 130 * ease)
+        ring_w = max(2, int(10 * (1.0 - k)))
         pygame.draw.circle(surf, PB_INK, (int(x), int(y)), ring_r + 3, ring_w + 5)
         pygame.draw.circle(surf, PB_WHITE, (int(x), int(y)), ring_r, ring_w)
         if impact.age < IMPACT_FLASH_TIME:
             f = impact.age / IMPACT_FLASH_TIME
-            size = (34 + 44 * min(1.0, f * 3.0)) * (1.0 - f * f)
+            size = (40 + 52 * min(1.0, f * 3.0)) * (1.0 - f * f)
             turn = impact.angle + f * 0.5
             pygame.draw.polygon(surf, PB_INK, _star_points(x, y, size + 9, size * 0.52 + 7, turn))
             pygame.draw.polygon(surf, PB_SUN, _star_points(x, y, size, size * 0.52, turn))
@@ -191,13 +231,16 @@ class MobileFX:
         pop = min(1.0, impact.age / 0.09)
         out = max(0.0, (k - 0.72) / 0.28)
         scale = (0.5 + 0.7 * pop) * (1.0 - out * 0.6) * (1.0 + (1.0 - pop) * 0.5)
-        glyph = text_fit("バリッ！", 40, PB_SUN, max_width=MOBILE_W - 120, outline=PB_INK, outline_px=5)
+        glyph = text_fit("バリッ！", 48, PB_SUN, max_width=MOBILE_W - 120, outline=PB_INK, outline_px=6)
         zoomed = pygame.transform.rotozoom(glyph, math.degrees(impact.angle), scale)
         # 画面の外へはみ出さない位置に出す
         rect = zoomed.get_rect(center=(int(x), int(y) - 62))
         surf.blit(zoomed, rect.clamp(surf.get_rect()))
 
     def draw(self, surf: pygame.Surface) -> None:
+        flash = self.flash_alpha()
+        if flash > 0:
+            surf.blit(_flash_surface(flash), (0, 0))
         for impact in self.impacts:
             self._draw_impact(surf, impact)
         for p in self.particles:

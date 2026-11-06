@@ -125,8 +125,9 @@ def pause_buttons(bgm_muted: bool) -> list[Button]:
 
 def result_buttons() -> list[Button]:
     return [
-        _pill(640, "もう一度", "rematch", h=84, fill=PB_SUN, size=34),
-        _pill(742, "タイトルへ", "to_title", h=76),
+        _pill(620, "もう一度", "rematch", h=84, fill=PB_SUN, size=34),
+        _pill(716, "結果をXにポスト", "post_result", h=72, size=28),
+        _pill(806, "タイトルへ", "to_title", h=70),
     ]
 
 

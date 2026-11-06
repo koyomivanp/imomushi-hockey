@@ -51,6 +51,7 @@ from mobile_view import (  # noqa: E402
 )
 from result_flow import ResultPhase  # noqa: E402
 from settings import load_settings, save_settings  # noqa: E402
+from share import open_url, post_url, result_post_text  # noqa: E402
 from sprites import init_sprites  # noqa: E402
 from touch_input import TouchControls, dash_button_center, keyboard_output, pad_home  # noqa: E402
 from visuals import make_window_icon  # noqa: E402
@@ -141,6 +142,8 @@ class MobileGame:
             match.toggle_pause()
         elif action == "rematch":
             self.start_match(vs_cpu=match.vs_cpu)
+        elif action == "post_result":
+            open_url(post_url(result_post_text(match)))
         elif action == "to_title":
             self.controls.reset()
             self.fx.reset()
