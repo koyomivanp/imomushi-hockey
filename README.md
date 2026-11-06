@@ -123,6 +123,29 @@ $env:BUTLER_API_KEY = "your-key"
 .\dev\publish_itch.ps1
 ```
 
+## スマホ版（ブラウザ）
+
+縦画面で上下に対戦する Web 版です。試合の処理は PC 版と共通で、表示と操作だけ縦画面用になっています。
+
+| 操作 | 動作 |
+|------|------|
+| 指を置いてなぞる | なぞった方向へ這う（跡が体節の壁になる） |
+| 左下のボタン | ダッシュ（PC は Shift） |
+| 右上の `II` | ポーズ |
+
+2人対戦は1台を挟み、画面の下半分と上半分でそれぞれ操作します。CPU 戦は画面のどこでも操作できます。
+
+ビルドには ffmpeg が必要です。インターネット接続がある環境で動作します（Python 実行環境を pygbag の CDN から読み込みます）。
+
+```bash
+pip install -r requirements-build.txt
+python dev/build_web.py --serve   # dist-web/ に出力し http://localhost:8000 で確認
+python dev/test_mobile.py         # 操作の回帰テスト
+python dev/render_mobile.py       # 画面 PNG を dev/out/mobile/ に出力
+```
+
+PC で動作だけ確認するなら `python mobile_main.py`（マウスで操作）でも起動できます。
+
 ## カスタム BGM / SE
 
 `assets/sounds/` に音声ファイルを置くと自動で読み込まれます。詳細は [assets/sounds/README.md](assets/sounds/README.md)。
@@ -142,10 +165,26 @@ $env:BUTLER_API_KEY = "your-key"
 | `effects.py` | ゴール・貫通演出 |
 | `sprites.py` | 葉っぱスプライト読み込み |
 | `constants.py` | 定数・バージョン |
+| `mobile_main.py` | スマホ版のエントリ・入力・進行 |
+| `mobile_view.py` | スマホ版の縦画面の画面構成 |
+| `mobile_art.py` | スマホ版の絵（絵本の庭・芋虫・てんとう虫） |
+| `mobile_fx.py` | スマホ版の演出（花びら・土ぼこり・サナギと蝶） |
+| `tuning.py` | 実行時の寸法（スマホ版だけ太くする） |
+| `touch_input.py` | フリック操作の判定 |
 | `settings.py` | 設定の読み書き |
 | `dev/render_screens.py` | 画面 PNG 出力・レイアウト検証 |
 | `dev/test_gameplay.py` | 回帰テスト |
 | `dev/sim_cpu_balance.py` | CPU の挙動計測 |
+
+## フォント
+
+| フォント | 用途 | ライセンス |
+|----------|------|------------|
+| [Zen Maru Gothic](https://fonts.google.com/specimen/Zen+Maru+Gothic) | PC版・スマホ版の全文字 | [SIL Open Font License 1.1](https://scripts.sil.org/OFL) |
+
+スマホ版の「絵本の庭」デザインは Mochiy Pop One を想定していましたが、
+この環境から Google Fonts へ接続できず同梱できませんでした。
+丸ゴシックで雰囲気の近い同梱済みの Zen Maru Gothic を使っています。
 
 ## ライセンス
 

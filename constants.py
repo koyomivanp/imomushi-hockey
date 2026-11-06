@@ -117,8 +117,10 @@ ELASTICITY = 1.0
 FENCE_HALF_WIDTH = CATERPILLAR_BODY_RADIUS
 FENCE_BOOST = 200.0
 FENCE_MIN_LENGTH = 12.0
-TRAIL_SEGMENT_INTERVAL = CATERPILLAR_BODY_RADIUS * 1.82
-TRAIL_MAX_GAP = CATERPILLAR_BODY_RADIUS * 2.1
+TRAIL_SEGMENT_INTERVAL_RATIO = 1.82
+TRAIL_MAX_GAP_RATIO = 2.1
+TRAIL_SEGMENT_INTERVAL = CATERPILLAR_BODY_RADIUS * TRAIL_SEGMENT_INTERVAL_RATIO
+TRAIL_MAX_GAP = CATERPILLAR_BODY_RADIUS * TRAIL_MAX_GAP_RATIO
 TRAIL_MIN_SPEED = 50.0
 TRAIL_WALL_LIFETIME = 2.6
 TRAIL_WALL_MAX_PER_PLAYER = 8
@@ -218,3 +220,78 @@ TIPS_COMMON: tuple[str, ...] = (
 )
 TIPS_CPU_CONTROLS = "WASD で移動。Shift は左右どちらでもダッシュ。"
 TIPS_TWO_PLAYER_CONTROLS = "P1 は WASD と左Shift。P2 は矢印キーと右Shift。"
+
+# スマホ縦画面（論理解像度。試合ロジックの横画面座標を90度回して縦に描く）
+MOBILE_W = 540
+MOBILE_H = 960
+MOBILE_UI_BUTTON_SIZE = 30
+MOBILE_UI_RESULT_SIZE = 52
+
+# コート配置 — 可動域(playable_rect)が画面いっぱいに収まる等倍率
+MOBILE_COURT_SCALE = 1.15
+MOBILE_COURT_CX = MOBILE_W / 2  # 論理 y=MOBILE_COURT_ORIGIN_Y がここに来る
+MOBILE_COURT_CY = MOBILE_H / 2  # 論理 x=MOBILE_COURT_ORIGIN_X がここに来る
+MOBILE_COURT_ORIGIN_X = 400.0
+MOBILE_COURT_ORIGIN_Y = 327.0
+
+# スマホ版だけ太くする（パッと見の分かりやすさ優先。当たり判定も一緒に太る）
+MOBILE_BODY_RADIUS_SCALE = 1.40  # 画面上の身体の太さ 50px 前後
+MOBILE_PUCK_RADIUS_SCALE = 1.70  # 画面上のボール直径 59px 前後
+MOBILE_TRAIL_WALL_MAX_PER_PLAYER = 7
+
+# 「絵本の庭」パレット
+PB_INK = (43, 42, 34)
+PB_CREAM = (253, 241, 199)
+PB_SUN = (255, 201, 60)
+PB_HILL_HI = (168, 214, 92)
+PB_HILL_LO = (109, 187, 74)
+PB_PINK = (255, 126, 157)
+PB_LOGO_GREEN = (46, 158, 79)
+PB_LOGO_RED = (232, 53, 46)
+PB_GROUND = (109, 187, 74)
+PB_GROUND_DARK = (94, 170, 63)
+PB_MOSS = (221, 238, 154)
+PB_MOSS_SPOT = (197, 226, 122)
+PB_P1 = (73, 190, 105)
+PB_P1_DARK = (34, 124, 64)
+PB_P2 = (156, 108, 229)
+PB_P2_DARK = (92, 54, 150)
+PB_BALL = (232, 53, 46)
+PB_WHITE = (255, 253, 244)
+
+# 見た目の線幅・丸み（スマホ画面のピクセル）
+PB_OUTLINE_W = 5
+PB_COURT_RADIUS = 46
+
+# 演出
+MOBILE_SHAKE_DURATION = 0.22
+MOBILE_SHAKE_AMPLITUDE = 11.0
+MOBILE_HITSTOP_DURATION = 0.07
+MOBILE_BREACH_HITSTOP = 0.13  # 貫通の一瞬の停止
+MOBILE_BREACH_SHAKE_POWER = 1.8
+MOBILE_BREACH_FX_INTERVAL = 0.3  # 続けて体節を抜けても大きな演出は連発しない
+MOBILE_STRONG_HIT_SPEED = 470.0
+MOBILE_STRONG_HIT_GAIN = 160.0
+MOBILE_GOAL_TEXT_DURATION = 1.6
+MOBILE_TAIL_SHRINK_TIME = 0.35
+MOBILE_SEVERED_RETRACT_STEP = 0.05  # ちぎれた尻尾側が1節ずつ引っ込む間隔
+MOBILE_BUTTON_POP_DURATION = 0.22
+
+# スライドパッドとダッシュボタン（縦画面の論理px）
+STICK_DEADZONE = 14.0
+STICK_RADIUS = 60.0
+TOUCH_PAD_X = 112  # 自分から見て右側（下の人は画面右、上の人は画面左）
+TOUCH_DASH_X = 104  # 自分から見て左側
+TOUCH_CONTROL_Y = 170  # 自分側の画面端からの距離
+TOUCH_PAD_RADIUS = 76
+TOUCH_DASH_RADIUS = 62
+TOUCH_DASH_MARGIN = 16  # ボタンの少し外を押しても効かせる
+TOUCH_DASH_TAP_TIME = 0.28  # 短く押してもこの時間は進む
+
+MOBILE_HELP_LINES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ルール", ("葉っぱを相手のゴールへ。先に3点で勝ち。",)),
+    ("這う", ("右下のパッドを行きたい方へスライド。", "這った跡が体節の壁になる。")),
+    ("ダッシュ", ("左下のボタン。押している間、一気に進む。", "打った葉っぱは直後だけ相手の体節を貫通。")),
+    ("キーボード", ("矢印キーかWASDで這う。Shiftでダッシュ。", "2人対戦は下がWASD、上が矢印キー。")),
+    ("2人対戦", ("上の人は、上側のパッドとボタンで操作。",)),
+)

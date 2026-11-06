@@ -5,7 +5,9 @@ from enum import Enum, auto
 
 import pygame
 
+import tuning
 from constants import (
+    MOBILE_SEVERED_RETRACT_STEP,
     COUNTDOWN_START,
     GO_DISPLAY_DURATION,
     PREP_DARKEN_DURATION,
@@ -276,10 +278,11 @@ class Match:
 
     def handle_input(
         self,
-        keys: pygame.key.ScancodeWrapper,
+        keys: pygame.key.ScancodeWrapper | None,
         dt: float,
         now: float,
         cpu_ai: "CPUAI | None" = None,
+        external_moves: dict[int, tuple[float, float, bool]] | None = None,
     ) -> None:
         if self.state == GameState.TITLE:
             return
@@ -299,6 +302,9 @@ class Match:
                 dx, dy, dash = cpu_ai.decide(
                     paddle, self.paddles[0], self.pucks, self.fences, now, self.pucks_frozen,
                 )
+                paddle.is_dashing = dash and bool(dx or dy)
+            elif external_moves is not None:
+                dx, dy, dash = external_moves.get(i, (0.0, 0.0, False))
                 paddle.is_dashing = dash and bool(dx or dy)
             else:
                 for key, (kx, ky) in controls[i].items():
@@ -399,7 +405,7 @@ class Match:
             return False
         lifetime = self._trail_lifetime(paddle, x1, y1, x2, y2)
         owner_fences = [f for f in self.fences if f.owner == paddle.player]
-        while len(owner_fences) >= TRAIL_WALL_MAX_PER_PLAYER:
+        while len(owner_fences) >= tuning.trail_wall_max():
             oldest = min(owner_fences, key=lambda f: f.created_at)
             self.fences.remove(oldest)
             owner_fences.remove(oldest)
@@ -411,7 +417,7 @@ class Match:
             y2=y2,
             until=now + lifetime,
             created_at=now,
-            half_width=FENCE_HALF_WIDTH,
+            half_width=tuning.fence_half_width(),
         ))
         paddle.trail_spawn_until = now + TRAIL_SPAWN_COOLDOWN
         if self.audio is not None:
@@ -423,27 +429,29 @@ class Match:
             return
 
         for paddle in self.paddles:
-            if paddle.is_dashing:
+            one_piece = tuning.one_piece_body()
+            if paddle.is_dashing and not one_piece:
                 paddle.trail_x = paddle.x
                 paddle.trail_y = paddle.y
                 continue
 
             speed = math.hypot(paddle.vx, paddle.vy)
             if speed < TRAIL_MIN_SPEED:
-                paddle.trail_x = paddle.x
-                paddle.trail_y = paddle.y
+                if not one_piece:  # 始点を動かすと、動き出したときに胴体が切れる
+                    paddle.trail_x = paddle.x
+                    paddle.trail_y = paddle.y
                 continue
 
             dx = paddle.x - paddle.trail_x
             dy = paddle.y - paddle.trail_y
             dist = math.hypot(dx, dy)
 
-            if dist >= TRAIL_MAX_GAP:
+            if dist >= tuning.trail_max_gap():
                 paddle.trail_x = paddle.x
                 paddle.trail_y = paddle.y
                 continue
 
-            if dist >= TRAIL_SEGMENT_INTERVAL and now >= paddle.trail_spawn_until:
+            if dist >= tuning.trail_segment_interval() and now >= paddle.trail_spawn_until:
                 if self._spawn_trail_segment(
                     paddle, paddle.trail_x, paddle.trail_y, paddle.x, paddle.y, now,
                 ):
@@ -615,6 +623,7 @@ class Match:
                         fences_to_remove.append(fence)
                         if breached:
                             puck.breach_flash_until = now + FENCE_BREACH_FLASH_DURATION
+                            puck.breach_owner = fence.owner
                             self.breach_sparks.extend(
                                 spawn_breach_sparks(puck.x, puck.y, puck.vx, puck.vy),
                             )
@@ -658,6 +667,24 @@ class Match:
         for fence in list(self.fences):
             if now >= fence.until:
                 self.fences.remove(fence)
+        if tuning.one_piece_body():
+            for paddle in self.paddles:
+                self._retract_severed_body(paddle, now)
+
+    def _retract_severed_body(self, paddle: Paddle, now: float) -> None:
+        """頭につながらなくなった尻尾側は、尻尾から順にすぐ引っ込める"""
+        body = sorted(
+            (f for f in self.fences if f.owner == paddle.player),
+            key=lambda f: f.created_at,
+            reverse=True,
+        )
+        next_x, next_y = paddle.trail_x, paddle.trail_y
+        for i, fence in enumerate(body):
+            if math.hypot(fence.x2 - next_x, fence.y2 - next_y) > 1.5:
+                for order, part in enumerate(reversed(body[i:]), start=1):
+                    part.until = min(part.until, now + MOBILE_SEVERED_RETRACT_STEP * order)
+                return
+            next_x, next_y = fence.x1, fence.y1
 
     def _update_arena_lighting(self, dt: float) -> None:
         s0, s1 = self.scores
