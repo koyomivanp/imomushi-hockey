@@ -39,6 +39,7 @@ from constants import (
     TRAIL_WALL_MAX_PER_PLAYER,
     WIN_SCORE,
 )
+from ai import CPU_DIFFICULTY_ORDER
 from match_prep import PrepPhase
 from menu_selection import SelectionHighlight
 from result_flow import ResultPhase, ease_in_out, normalized_progress
@@ -190,7 +191,7 @@ class Match:
         return tuple(self.title_menu_sel.strength(i) for i in range(3))
 
     def cpu_diff_sel_strengths(self) -> tuple[float, float, float]:
-        return tuple(self.cpu_diff_sel.strength(i) for i in range(3))
+        return tuple(self.cpu_diff_sel.strength(i) for i in range(len(CPU_DIFFICULTY_ORDER)))
 
     def start_match_prep(self) -> None:
         from screens import pick_random_tip

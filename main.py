@@ -217,13 +217,13 @@ def main() -> None:
                 elif event.key in (pygame.K_a, pygame.K_LEFT):
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
                         prev = match.cpu_diff_index
-                        match.cpu_diff_index = (match.cpu_diff_index - 1) % 3
+                        match.cpu_diff_index = (match.cpu_diff_index - 1) % len(CPU_DIFFICULTY_ORDER)
                         if audio is not None and match.cpu_diff_index != prev:
                             audio.play_menu_move()
                 elif event.key in (pygame.K_d, pygame.K_RIGHT):
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
                         prev = match.cpu_diff_index
-                        match.cpu_diff_index = (match.cpu_diff_index + 1) % 3
+                        match.cpu_diff_index = (match.cpu_diff_index + 1) % len(CPU_DIFFICULTY_ORDER)
                         if audio is not None and match.cpu_diff_index != prev:
                             audio.play_menu_move()
                 elif event.key in (pygame.K_3, pygame.K_KP3):
@@ -242,6 +242,12 @@ def main() -> None:
                     if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
                         prev = match.cpu_diff_index
                         match.cpu_diff_index = 2
+                        if audio is not None and match.cpu_diff_index != prev:
+                            audio.play_menu_move()
+                elif event.key in (pygame.K_6, pygame.K_KP6):
+                    if match.state == GameState.CPU_DIFF and match.cpu_diff_ready():
+                        prev = match.cpu_diff_index
+                        match.cpu_diff_index = 3
                         if audio is not None and match.cpu_diff_index != prev:
                             audio.play_menu_move()
                 elif event.key == pygame.K_m:

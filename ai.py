@@ -25,6 +25,8 @@ class CPUDifficulty:
     dash_chance: float
     dash_cooldown: float
     dash_duration: float
+    # 葉っぱの後ろへ回り込んでから打つ（自分のゴールへ押し込まない）。さいきょうだけ
+    smart: bool = False
 
 
 DIFFICULTIES: dict[str, CPUDifficulty] = {
@@ -64,10 +66,23 @@ DIFFICULTIES: dict[str, CPUDifficulty] = {
         dash_cooldown=0.88,
         dash_duration=0.20,
     ),
+    "strongest": CPUDifficulty(
+        key="strongest",
+        label="さいきょう",
+        reaction_min=0.012,
+        reaction_max=0.03,
+        aim_error=2.5,
+        threat_score_defend=400.0,
+        intercept_lead=0.95,
+        dash_chance=0.62,
+        dash_cooldown=0.72,
+        dash_duration=0.24,
+        smart=True,
+    ),
 }
 
 DEFAULT_CPU_DIFFICULTY = "normal"
-CPU_DIFFICULTY_ORDER = ("easy", "normal", "hard")
+CPU_DIFFICULTY_ORDER = ("easy", "normal", "hard", "strongest")
 
 
 class CPUAI:
@@ -77,6 +92,7 @@ class CPUAI:
         self._next_update = 0.0
         self._dash_cooldown_until = 0.0
         self._dash_until = 0.0
+        self._lined_up = False
 
     @property
     def difficulty(self) -> CPUDifficulty:
@@ -136,6 +152,8 @@ class CPUAI:
         if now < self._dash_cooldown_until or dist < 72.0:
             return False
         diff = self.difficulty
+        if diff.smart and not self._lined_up:
+            return False
         chance = diff.dash_chance
         if dist > 115.0:
             chance += 0.08
@@ -212,6 +230,8 @@ class CPUAI:
             return self._fence_defend_target(paddle, threat, now)
 
         puck = self._active_puck(pucks, paddle)
+        if diff.smart:
+            return self._smart_attack_target(paddle, puck, now)
         return self._fence_attack_target(paddle, puck, now)
 
     def _jitter(self, x: float, y: float) -> tuple[float, float]:
@@ -284,6 +304,48 @@ class CPUAI:
         target_x = max(play.centerx + 20, min(ahead_x + 35, play.right - r - 6))
         target_y = max(goal_top - 16, min(goal_bottom + 16, ahead_y))
         return self._jitter(target_x, target_y)
+
+    def _smart_attack_target(self, paddle: Paddle, puck: Puck, now: float) -> tuple[float, float]:
+        """葉っぱの後ろ（自分のゴール側）に回ってから、相手のゴールへ向けて押し出す"""
+        play = playable_rect()
+        frame = arena_frame_rect()
+        r = paddle.radius(now)
+        toward = -1.0 if paddle.player == CPU_PLAYER else 1.0  # 相手のゴールの向き（x）
+        ax = puck.x + puck.vx * 0.12
+        ay = puck.y + puck.vy * 0.12
+        behind = (paddle.x - ax) * -toward  # 正なら葉っぱより自分のゴール側にいる
+        self._lined_up = False
+        if (ax - play.centerx) * toward > 0 and math.hypot(puck.vx, puck.vy) > 120.0:
+            # 葉っぱが相手側で動いているうちは追いかけず、自分のゴール前で待つ（裏を取られない）
+            # 止まりかけたら取りに行く（待ち続けて試合が進まなくならないように）
+            goal_top, goal_bottom = goal_bounds()
+            tx = play.centerx - toward * 110.0
+            ty = max(goal_top, min(goal_bottom, ay))
+            return self._jitter(tx, ty)
+        if behind < 6.0:
+            # 葉っぱが自分と自分のゴールの間にある。横から回り込んで後ろへ
+            side = 1.0 if paddle.y >= ay else -1.0
+            tx = ax - toward * 75.0
+            ty = ay + side * 72.0
+        else:
+            goal_x = frame.left if toward < 0 else frame.right
+            ux, uy = ax - goal_x, ay - play.centery
+            length = math.hypot(ux, uy) or 1.0
+            ux, uy = ux / length, uy / length
+            # ゴールと葉っぱを結ぶ線の延長上（葉っぱの真後ろ）へ入り、線に乗ったらゴールへ打ち抜く
+            px, py = paddle.x - ax, paddle.y - ay
+            gap = math.hypot(px, py) or 1.0
+            on_line = (px * ux + py * uy) / gap > 0.8
+            if on_line and gap < r * 3.2:
+                tx = ax - ux * 140.0
+                ty = ay - uy * 140.0
+                self._lined_up = True
+            else:
+                tx = ax + ux * r * 1.8
+                ty = ay + uy * r * 1.8
+        tx = max(play.left + r + 6, min(tx, play.right - r - 6))
+        ty = max(play.top + r + 6, min(ty, play.bottom - r - 6))
+        return self._jitter(tx, ty)
 
     def _active_puck(self, pucks: list[Puck], paddle: Paddle) -> Puck:
         if len(pucks) == 1:

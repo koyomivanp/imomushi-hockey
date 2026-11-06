@@ -31,7 +31,8 @@ _BTN_W = 148
 _BTN_H = 48
 _BTN_GAP = 14
 _TARGET_Y = 248
-_TOTAL_W = _BTN_W * 3 + _BTN_GAP * 2
+_BTN_COUNT = len(CPU_DIFFICULTY_ORDER)
+_TOTAL_W = _BTN_W * _BTN_COUNT + _BTN_GAP * (_BTN_COUNT - 1)
 _START_X = SCREEN_W // 2 - _TOTAL_W // 2
 
 _SOURCE_CY = TITLE_MENU_TOP + TITLE_MENU_H // 2
@@ -39,7 +40,7 @@ _TARGET_CY = _TARGET_Y + _BTN_H // 2
 
 _TARGET_CX = tuple(
     _START_X + i * (_BTN_W + _BTN_GAP) + _BTN_W // 2
-    for i in range(3)
+    for i in range(_BTN_COUNT)
 )
 
 _BARK = (58, 38, 24)
@@ -193,7 +194,7 @@ def draw_cpu_diff_morph(
             ease = _ease_out_back(local_p)
             cx = SCREEN_W / 2 + (_TARGET_CX[i] - SCREEN_W / 2) * ease
             cy = _SOURCE_CY + (_TARGET_CY - _SOURCE_CY) * _ease_out_cubic(local_p)
-            slot_w = _TOTAL_W / 3
+            slot_w = _TOTAL_W / _BTN_COUNT
             w = slot_w + (_BTN_W - slot_w) * ease
             h = TITLE_MENU_H + (_BTN_H - TITLE_MENU_H) * ease
             shell_alpha = 255 if morph_ready(p) else int(255 * _ease_out_cubic(local_p))

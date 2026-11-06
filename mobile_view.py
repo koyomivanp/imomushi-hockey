@@ -94,10 +94,11 @@ TITLE_DIFF_LABEL_Y = 432  # 芋虫の下端より下、難易度ボタンより�
 
 
 def title_buttons(bgm_muted: bool, cpu_diff_index: int = 1) -> list[Button]:
-    w, gap, h = 150, 12, 66
-    left = (MOBILE_W - (w * 3 + gap * 2)) // 2
+    count = len(CPU_DIFFICULTY_ORDER)
+    w, gap, h = 118, 8, 66
+    left = (MOBILE_W - (w * count + gap * (count - 1))) // 2
     buttons = [
-        Button(pygame.Rect(left + i * (w + gap), 458, w, h), DIFFICULTIES[key].label, f"cpu_diff:{i}", size=27)
+        Button(pygame.Rect(left + i * (w + gap), 458, w, h), DIFFICULTIES[key].label, f"cpu_diff:{i}", size=23)
         for i, key in enumerate(CPU_DIFFICULTY_ORDER)
     ]
     buttons.append(_pill(546, "CPU芋虫と対戦", f"cpu:{cpu_diff_index}", h=88, fill=PB_SUN, size=34))
