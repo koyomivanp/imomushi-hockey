@@ -13,6 +13,8 @@ import random
 import pygame
 
 from constants import (
+    TOUCH_DASH_RADIUS,
+    TOUCH_PAD_RADIUS,
     MOBILE_COURT_CX,
     MOBILE_COURT_CY,
     MOBILE_COURT_ORIGIN_X,
@@ -304,21 +306,6 @@ def draw_face(surf: pygame.Surface, x: float, y: float, radius: float, heading: 
     surf.blit(rotated, rotated.get_rect(center=(int(x), int(y))))
 
 
-def dash_tail_points(x: float, y: float, heading: float, radius: float, phase: float) -> list[tuple[float, float, float]]:
-    """ダッシュ中の身体 — 後ろへ波打って伸びる"""
-    pts: list[tuple[float, float, float]] = []
-    fx, fy = math.cos(heading), math.sin(heading)
-    px, py = -fy, fx
-    length = radius * 3.9
-    for i in range(7):
-        t = i / 6
-        wave = math.sin(phase * 19.0 - t * 5.4) * radius * 0.42 * t
-        r = radius * (1.0 - 0.46 * t * t)
-        pts.append((x - fx * length * t + px * wave, y - fy * length * t + py * wave, r))
-    pts.reverse()
-    return pts
-
-
 # --- ボール（てんとう虫） ---
 
 _ladybug_cache: dict[int, pygame.Surface] = {}
@@ -469,6 +456,65 @@ def draw_pause_button(surf: pygame.Surface, rect: pygame.Rect, pressed: float = 
     for offset in (-10, 10):
         bar = pygame.Rect(c[0] + offset - 5, c[1] - 14, 10, 28)
         pygame.draw.rect(surf, PB_INK, bar, border_radius=4)
+
+
+# --- スライドパッドとダッシュボタン ---
+
+_touch_cache: dict[tuple, pygame.Surface] = {}
+
+
+def _pad_base() -> pygame.Surface:
+    cached = _touch_cache.get(("pad",))
+    if cached is None:
+        r = TOUCH_PAD_RADIUS
+        cached = pygame.Surface((r * 2 + 8, r * 2 + 8), pygame.SRCALPHA)
+        c = (r + 4, r + 4)
+        pygame.draw.circle(cached, (*PB_CREAM, 110), c, r)
+        pygame.draw.circle(cached, (*PB_INK, 170), c, r, 5)
+        _touch_cache[("pad",)] = cached
+    return cached
+
+
+def _pad_knob() -> pygame.Surface:
+    cached = _touch_cache.get(("knob",))
+    if cached is None:
+        r = 34
+        cached = pygame.Surface((r * 2 + 8, r * 2 + 8), pygame.SRCALPHA)
+        c = (r + 4, r + 4)
+        pygame.draw.circle(cached, (*PB_CREAM, 225), c, r)
+        pygame.draw.circle(cached, PB_INK, c, r, 5)
+        _touch_cache[("knob",)] = cached
+    return cached
+
+
+def _dash_face(player: int, active: bool) -> pygame.Surface:
+    key = ("dash", player, active)
+    cached = _touch_cache.get(key)
+    if cached is None:
+        r = TOUCH_DASH_RADIUS
+        cached = pygame.Surface((r * 2 + 8, r * 2 + 8), pygame.SRCALPHA)
+        c = (r + 4, r + 4)
+        pygame.draw.circle(cached, (*(PB_PINK if active else PB_SUN), 235 if active else 190), c, r)
+        pygame.draw.circle(cached, PB_INK, c, r, 5)
+        label = text("ダッシュ", 22, PB_INK)
+        cached.blit(label, label.get_rect(center=c))
+        if player == 1:  # 向かい側の人から読めるように
+            cached = pygame.transform.rotate(cached, 180)
+        _touch_cache[key] = cached
+    return cached
+
+
+def draw_touch_controls(surf: pygame.Surface, *, player: int, anchor: tuple[float, float],
+                        knob: tuple[float, float], dash_center: tuple[int, int], dash_active: bool) -> None:
+    base = _pad_base()
+    surf.blit(base, base.get_rect(center=(round(anchor[0]), round(anchor[1]))))
+    dist = math.hypot(knob[0], knob[1])
+    reach = TOUCH_PAD_RADIUS - 34
+    k = min(1.0, reach / dist) if dist > 1e-6 else 0.0
+    top = _pad_knob()
+    surf.blit(top, top.get_rect(center=(round(anchor[0] + knob[0] * k), round(anchor[1] + knob[1] * k))))
+    face = _dash_face(player, dash_active)
+    surf.blit(face, face.get_rect(center=dash_center))
 
 
 # --- タイトルの庭 ---

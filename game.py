@@ -7,6 +7,7 @@ import pygame
 
 import tuning
 from constants import (
+    MOBILE_SEVERED_RETRACT_STEP,
     COUNTDOWN_START,
     GO_DISPLAY_DURATION,
     PREP_DARKEN_DURATION,
@@ -428,15 +429,17 @@ class Match:
             return
 
         for paddle in self.paddles:
-            if paddle.is_dashing:
+            one_piece = tuning.one_piece_body()
+            if paddle.is_dashing and not one_piece:
                 paddle.trail_x = paddle.x
                 paddle.trail_y = paddle.y
                 continue
 
             speed = math.hypot(paddle.vx, paddle.vy)
             if speed < TRAIL_MIN_SPEED:
-                paddle.trail_x = paddle.x
-                paddle.trail_y = paddle.y
+                if not one_piece:  # 始点を動かすと、動き出したときに胴体が切れる
+                    paddle.trail_x = paddle.x
+                    paddle.trail_y = paddle.y
                 continue
 
             dx = paddle.x - paddle.trail_x
@@ -620,6 +623,7 @@ class Match:
                         fences_to_remove.append(fence)
                         if breached:
                             puck.breach_flash_until = now + FENCE_BREACH_FLASH_DURATION
+                            puck.breach_owner = fence.owner
                             self.breach_sparks.extend(
                                 spawn_breach_sparks(puck.x, puck.y, puck.vx, puck.vy),
                             )
@@ -663,6 +667,24 @@ class Match:
         for fence in list(self.fences):
             if now >= fence.until:
                 self.fences.remove(fence)
+        if tuning.one_piece_body():
+            for paddle in self.paddles:
+                self._retract_severed_body(paddle, now)
+
+    def _retract_severed_body(self, paddle: Paddle, now: float) -> None:
+        """頭につながらなくなった尻尾側は、尻尾から順にすぐ引っ込める"""
+        body = sorted(
+            (f for f in self.fences if f.owner == paddle.player),
+            key=lambda f: f.created_at,
+            reverse=True,
+        )
+        next_x, next_y = paddle.trail_x, paddle.trail_y
+        for i, fence in enumerate(body):
+            if math.hypot(fence.x2 - next_x, fence.y2 - next_y) > 1.5:
+                for order, part in enumerate(reversed(body[i:]), start=1):
+                    part.until = min(part.until, now + MOBILE_SEVERED_RETRACT_STEP * order)
+                return
+            next_x, next_y = fence.x1, fence.y1
 
     def _update_arena_lighting(self, dt: float) -> None:
         s0, s1 = self.scores

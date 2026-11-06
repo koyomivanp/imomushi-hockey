@@ -10,7 +10,7 @@ from __future__ import annotations
 from constants import (
     CATERPILLAR_BODY_RADIUS,
     MAX_FRAME_DT,
-    PADDLE_SPEED,
+    PADDLE_DASH_SPEED,
     MOBILE_BODY_RADIUS_SCALE,
     MOBILE_PUCK_RADIUS_SCALE,
     MOBILE_TRAIL_WALL_MAX_PER_PLAYER,
@@ -65,12 +65,17 @@ def trail_max_gap() -> float:
 
     スマホのブラウザはフレームが飛ぶ。1フレームの移動量が
     「間隔〜上限」の窓をまたぐと跡が1つも出なくなるので、
-    最大 dt 分の移動を足した幅を確保する。
+    ダッシュの最大 dt 分の移動を足した幅を確保する。
     """
     gap = body_radius() * TRAIL_MAX_GAP_RATIO
     if _mobile:
-        gap = max(gap, trail_segment_interval() + PADDLE_SPEED * MAX_FRAME_DT * 1.4)
+        gap = max(gap, trail_segment_interval() + PADDLE_DASH_SPEED * MAX_FRAME_DT * 1.4)
     return gap
+
+
+def one_piece_body() -> bool:
+    """スマホ版は止まってもダッシュしても、頭から尻尾まで1本につなげる"""
+    return _mobile
 
 
 def trail_wall_max() -> int:

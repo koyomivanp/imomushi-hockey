@@ -15,6 +15,9 @@ from constants import (  # noqa: E402
     FPS,
     GAME_TITLE,
     MAX_FRAME_DT,
+    MOBILE_BREACH_FX_INTERVAL,
+    MOBILE_BREACH_HITSTOP,
+    MOBILE_BREACH_SHAKE_POWER,
     MOBILE_H,
     MOBILE_HITSTOP_DURATION,
     MOBILE_SHAKE_AMPLITUDE,
@@ -34,6 +37,7 @@ from mobile_view import (  # noqa: E402
     draw_result,
     draw_score,
     draw_title,
+    draw_touch_controls,
     goal_screen_pos,
     help_buttons,
     hit_button,
@@ -47,12 +51,12 @@ from mobile_view import (  # noqa: E402
 )
 from result_flow import ResultPhase  # noqa: E402
 from settings import load_settings, save_settings  # noqa: E402
+from share import open_url, post_url, result_post_text  # noqa: E402
 from sprites import init_sprites  # noqa: E402
-from touch_input import TouchControls  # noqa: E402
+from touch_input import TouchControls, dash_button_center, keyboard_output, pad_home  # noqa: E402
 from visuals import make_window_icon  # noqa: E402
 
 MOUSE_FINGER = -1
-DASH_PUFF_INTERVAL = 0.045
 
 
 class MobileGame:
@@ -74,11 +78,12 @@ class MobileGame:
         self.pressed_at = -10.0
         self.pause_pop_at = -10.0
         self.shake_timer = 0.0
+        self.shake_power = 1.0
         self.hitstop_timer = 0.0
+        self._next_breach_fx = 0.0
         self._puck_speeds: list[float] = []
         self._breach_marks: list[float] = []
         self._prev_scores = (0, 0)
-        self._next_puff = 0.0
         if audio is not None and self.settings.bgm_muted:
             self.bgm_muted = audio.toggle_bgm_mute()
 
@@ -137,6 +142,8 @@ class MobileGame:
             match.toggle_pause()
         elif action == "rematch":
             self.start_match(vs_cpu=match.vs_cpu)
+        elif action == "post_result":
+            open_url(post_url(result_post_text(match)))
         elif action == "to_title":
             self.controls.reset()
             self.fx.reset()
@@ -152,6 +159,7 @@ class MobileGame:
                 match.toggle_pause()
                 self.controls.reset()
                 return
+            self.controls.visible = True
             self.controls.press(finger, x, y, self.game_time, two_player=not match.vs_cpu)
             return
         action = hit_button(self.visible_buttons(), x, y)
@@ -175,6 +183,8 @@ class MobileGame:
         moves: dict[int, tuple[float, float, bool]] = {}
         for player, stick in enumerate(self.controls.sticks):
             dx, dy, dash = stick.output(self.game_time)
+            if not (dx or dy):
+                dx, dy, dash = keyboard_output(pygame.key.get_pressed(), player, two_player=not self.match.vs_cpu)
             lx, ly = screen_dir_to_logic(dx, dy)
             moves[player] = (lx, ly, dash)
         return moves
@@ -184,19 +194,21 @@ class MobileGame:
         if self.shake_timer <= 0.0:
             return 0.0, 0.0
         k = self.shake_timer / MOBILE_SHAKE_DURATION
-        amp = MOBILE_SHAKE_AMPLITUDE * k * k
+        amp = MOBILE_SHAKE_AMPLITUDE * self.shake_power * k * k
         t = self.game_time
         return math.sin(t * 61.0) * amp, math.sin(t * 47.0) * amp * 0.8
 
-    def _spawn_dash_puffs(self) -> None:
-        if self.game_time < self._next_puff:
+    def _on_breach(self, puck) -> None:
+        sx, sy = logic_to_screen(puck.x, puck.y)
+        heading = logic_heading_to_screen(math.atan2(puck.vy, puck.vx))
+        if self.game_time < self._next_breach_fx:
+            self.fx.burst_shards(sx, sy, heading, puck.breach_owner)
             return
-        for paddle in self.match.paddles:
-            if not paddle.is_dashing:
-                continue
-            sx, sy = logic_to_screen(paddle.x, paddle.y)
-            self.fx.puff_dash(sx, sy, logic_heading_to_screen(paddle.face_heading), paddle.player)
-        self._next_puff = self.game_time + DASH_PUFF_INTERVAL
+        self._next_breach_fx = self.game_time + MOBILE_BREACH_FX_INTERVAL
+        self.fx.burst_breach(sx, sy, heading, puck.breach_owner)
+        self.shake_timer = MOBILE_SHAKE_DURATION
+        self.shake_power = MOBILE_BREACH_SHAKE_POWER
+        self.hitstop_timer = MOBILE_BREACH_HITSTOP
 
     def _watch_match_events(self) -> None:
         match = self.match
@@ -206,6 +218,7 @@ class MobileGame:
             x, y = goal_screen_pos(match)
             self.fx.burst_goal(x, y, scorer)
             self.shake_timer = MOBILE_SHAKE_DURATION
+            self.shake_power = 1.0
             self._prev_scores = scores
 
         speeds = []
@@ -215,12 +228,15 @@ class MobileGame:
             prev = self._puck_speeds[i] if i < len(self._puck_speeds) else speed
             if speed >= MOBILE_STRONG_HIT_SPEED and speed - prev >= MOBILE_STRONG_HIT_GAIN:
                 self.shake_timer = MOBILE_SHAKE_DURATION
+                self.shake_power = 1.0
                 self.hitstop_timer = MOBILE_HITSTOP_DURATION
             speeds.append(speed)
             prev_mark = self._breach_marks[i] if i < len(self._breach_marks) else 0.0
             if puck.breach_flash_until > prev_mark + 1e-6:
+                self._on_breach(puck)
+            elif self.game_time < puck.breach_flash_until:
                 sx, sy = logic_to_screen(puck.x, puck.y)
-                self.fx.burst_shards(sx, sy, 1 - int(puck.vx > 0))
+                self.fx.spark_trail(sx, sy, logic_heading_to_screen(math.atan2(puck.vy, puck.vx)))
             marks.append(puck.breach_flash_until)
         self._puck_speeds = speeds
         self._breach_marks = marks
@@ -243,7 +259,6 @@ class MobileGame:
             match.update(dt, self.game_time)
         if match.state != GameState.PAUSE:
             self._watch_match_events()
-            self._spawn_dash_puffs()
             self.fx.update(dt)
             self.butterfly.update(dt)
             self.shake_timer = max(0.0, self.shake_timer - dt)
@@ -262,6 +277,13 @@ class MobileGame:
             self.running = False
         elif event.type == pygame.WINDOWFOCUSLOST:
             self.on_focus_lost()
+        elif event.type == pygame.KEYDOWN:
+            self.controls.visible = False
+            if event.key == pygame.K_ESCAPE and self.match.state in (
+                GameState.PLAYING, GameState.COUNTDOWN, GameState.PAUSE,
+            ):
+                self.controls.reset()
+                self.match.toggle_pause()
         elif event.type == pygame.FINGERDOWN:
             self.on_press(event.finger_id, event.x * MOBILE_W, event.y * MOBILE_H)
         elif event.type == pygame.FINGERMOTION:
@@ -295,6 +317,17 @@ def draw_frame(screen: pygame.Surface, game: MobileGame, now: float) -> None:
 
     draw_match(screen, match, now, fx=game.fx, shake=game.shake_offset())
     pause_pop = max(0.0, 1.0 - (now - game.pause_pop_at) / 0.25)
+    if game.controls.visible and match.state in (GameState.PLAYING, GameState.COUNTDOWN):
+        for player in (0,) if match.vs_cpu else (0, 1):
+            stick = game.controls.sticks[player]
+            draw_touch_controls(
+                screen,
+                player=player,
+                anchor=(stick.anchor_x, stick.anchor_y) if stick.finger is not None else pad_home(player),
+                knob=stick.knob_offset(),
+                dash_center=dash_button_center(player),
+                dash_active=stick.is_dash_active(now),
+            )
     draw_score(screen, match, pause_pop=min(1.0, pause_pop))
     draw_countdown(screen, match, now)
     game.fx.draw_goal_text(screen)

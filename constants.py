@@ -235,7 +235,7 @@ MOBILE_COURT_ORIGIN_X = 400.0
 MOBILE_COURT_ORIGIN_Y = 327.0
 
 # スマホ版だけ太くする（パッと見の分かりやすさ優先。当たり判定も一緒に太る）
-MOBILE_BODY_RADIUS_SCALE = 1.67  # 画面上の身体の太さ 60px 前後
+MOBILE_BODY_RADIUS_SCALE = 1.40  # 画面上の身体の太さ 50px 前後
 MOBILE_PUCK_RADIUS_SCALE = 1.70  # 画面上のボール直径 59px 前後
 MOBILE_TRAIL_WALL_MAX_PER_PLAYER = 7
 
@@ -267,25 +267,31 @@ PB_COURT_RADIUS = 46
 MOBILE_SHAKE_DURATION = 0.22
 MOBILE_SHAKE_AMPLITUDE = 11.0
 MOBILE_HITSTOP_DURATION = 0.07
+MOBILE_BREACH_HITSTOP = 0.13  # 貫通の一瞬の停止
+MOBILE_BREACH_SHAKE_POWER = 1.8
+MOBILE_BREACH_FX_INTERVAL = 0.3  # 続けて体節を抜けても大きな演出は連発しない
 MOBILE_STRONG_HIT_SPEED = 470.0
 MOBILE_STRONG_HIT_GAIN = 160.0
 MOBILE_GOAL_TEXT_DURATION = 1.6
 MOBILE_TAIL_SHRINK_TIME = 0.35
+MOBILE_SEVERED_RETRACT_STEP = 0.05  # ちぎれた尻尾側が1節ずつ引っ込む間隔
 MOBILE_BUTTON_POP_DURATION = 0.22
 
-# フリック操作（速度・距離は縦画面の論理px）
+# スライドパッドとダッシュボタン（縦画面の論理px）
 STICK_DEADZONE = 14.0
 STICK_RADIUS = 60.0
-FLICK_SPEED = 1100.0
-FLICK_MIN_DISTANCE = 36.0
-FLICK_SAMPLE_WINDOW = 0.08
-FLICK_RELEASE_WINDOW = 0.18
-FLICK_DASH_DURATION = 0.28
+TOUCH_PAD_X = 112  # 自分から見て右側（下の人は画面右、上の人は画面左）
+TOUCH_DASH_X = 104  # 自分から見て左側
+TOUCH_CONTROL_Y = 170  # 自分側の画面端からの距離
+TOUCH_PAD_RADIUS = 76
+TOUCH_DASH_RADIUS = 62
+TOUCH_DASH_MARGIN = 16  # ボタンの少し外を押しても効かせる
+TOUCH_DASH_TAP_TIME = 0.28  # 短く押してもこの時間は進む
 
 MOBILE_HELP_LINES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ルール", ("葉っぱを相手のゴールへ。先に3点で勝ち。",)),
-    ("這う", ("指を置いて、行きたい方へなぞる。", "なぞっている間は這い、跡が体節の壁になる。")),
-    ("ダッシュ", ("素早くフリック。その方向へ一気に進む。", "体節は出ず、壁もすり抜ける。")),
-    ("貫通", ("ダッシュで打った葉っぱは、", "直後だけ相手の体節を突き抜ける。")),
-    ("2人対戦", ("1台を挟んで、画面の下半分と上半分で", "それぞれ操作する。")),
+    ("這う", ("右下のパッドを行きたい方へスライド。", "這った跡が体節の壁になる。")),
+    ("ダッシュ", ("左下のボタン。押している間、一気に進む。", "打った葉っぱは直後だけ相手の体節を貫通。")),
+    ("キーボード", ("矢印キーかWASDで這う。Shiftでダッシュ。", "2人対戦は下がWASD、上が矢印キー。")),
+    ("2人対戦", ("上の人は、上側のパッドとボタンで操作。",)),
 )
