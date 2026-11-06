@@ -20,7 +20,7 @@ def _app_root() -> Path:
 
 
 SOUNDS_DIR = _app_root() / "assets" / "sounds"
-SAMPLE_RATE = 22050
+SAMPLE_RATE = 44100  # 新しい効果音の高い倍音（ゴールのキラキラなど）を削らないため
 
 
 class BGMMode(Enum):
